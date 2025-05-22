@@ -1,0 +1,37 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+venv/
+env/
+.venv/
+ENV/
+env.bak/
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+
+# Environment / secrets
+config/.env
+*.env
+
+# Jupyter / notebook data
+.ipynb_checkpoints/
+
+# VSCode and editor-specific
+.vscode/
+.idea/
+*.swp
+
+# Logs and dumps
+*.log
+*.bak
+*.tmp
+*.old
+data/echo_corpus/
+data/**/*.jsonl
+data/**/*.dump
