@@ -41,13 +41,14 @@ A secondary goal is to create **"digital echos" of users** it interacts with —
 
 ## Memory Layers
 
-| Layer               | Backend               | Purpose                                |
+| Layer               | Backend                | Purpose                                |
 |---------------------|------------------------|----------------------------------------|
 | **Short-term**      | In-memory              | Current session context buffer         |
 | **Semantic recall** | Qdrant                 | Similar past messages via embeddings   |
 | **Structured facts**| PostgreSQL + pgvector  | Core identity, journal logs            |
 | **Graph memory**    | Neo4j                  | Topic trees, emotional scoring, links  |
 
+You can read more under the doc/ folder on how this is intented to work.
 ---
 
 ## Requirements
@@ -105,7 +106,7 @@ ai-assistant/
 │   └── loader.py              # Loads config and applies temperature/emotion logic
 │
 ├── tools/                     # Optional agent tools (image, search, etc.)
-│   ├── image_gen.py           # Stable Diffusion / image creation interface
+│   ├── image_gen.py           # (future) Stable Diffusion / image creation interface
 │   ├── sandbox_env.py         # (Future) Chrooted tool execution environment
 │   └── web_research.py        # (Future) Agent browser/research capabilities
 │
