@@ -1,0 +1,21 @@
+flowchart TD
+    A[👤 User Input] --> B[🧠 Engine]
+    B --> B1[Short-term Buffer]
+    B --> B2[Qdrant (Semantic Search)]
+    B --> B3[PostgreSQL (Facts, Logs)]
+    B --> B4[Neo4j (Topics, Entities)]
+
+    B2 --> C[🧩 Context Builder]
+    B3 --> C
+    B4 --> C
+    B1 --> C
+
+    C --> D[🔮 LLM (Prompt + Input)]
+
+    D --> E[🗣️ Response]
+
+    E --> F1[📥 Save to Postgres (Log + Tags)]
+    E --> F2[⬆️ Embed & store in Qdrant]
+    E --> F3[📈 Update Neo4j: Topics, Sentiment]
+
+    F1 --> G[🧬 Echo Corpus (Future Training)]
