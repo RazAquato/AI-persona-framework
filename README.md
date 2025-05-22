@@ -1,65 +1,140 @@
 # UNDER CONSTRUCTION!
 
-# AI persona framework
- Modular LLM assistant with memory, tools and persona simulation
-AI Persona Framework: Modular LLM Assistant with Memory, Tools, and Persona Simulation
+# AI Persona Framework
+Modular LLM assistant with memory, tools and persona simulation
 
-Author: Kenneth
-License: MIT
-
-Description:
-A modular, open-source AI assistant system designed for personal knowledge integration, persona simulation, and tool augmentation.
-This project aims to combine LangChain, Qdrant, and Chainlit to deliver a fully local, extensible framework.
-
-Planned features:
-- Chainlit web UI with persona selector and chat interface
-- LangChain-based conversation agent with custom persona profiles
-- Qdrant vector store for semantic memory (RAG support)
-- Optional Neo4j graph for relationships and knowledge graphs
-- Tool system for invoking Stable Diffusion and other services
-- Future MCP and multi-user integration support
-- Local LLM inference (e.g., LLaMA, Athene) using Transformers or llama.cpp
+**Author:** Kenneth  
+**License:** MIT
 
 ---
 
-Folder Structure:
+## Vision
 
-ai_persona_framework/
-├── README.md
-├── requirements.txt
-├── .env.example
-├── main.py                # Entry point for Chainlit
-├── agents/
-│   ├── base_agent.py      # Conversation agent logic
-│   └── persona_loader.py  # Load persona YAMLs
-├── memory/
-│   ├── qdrant_client.py   # Interface with Qdrant
-│   └── memory_utils.py    # Embedding, retrieval, storage
-├── tools/
-│   ├── image_tool.py      # Stable Diffusion API caller
-│   └── registry.py        # Tool loader and integration
-├── models/
-│   └── model_runner.py    # Load/serve LLMs (local)
-├── personas/
-│   ├── emma.yaml
-│   ├── alfred.yaml
-│   └── yourname.yaml
-├── data/
-│   └── logs/              # Chat logs and extracted facts
-└── utils/
-    ├── config.py          # Config loader (dotenv/YAML)
-    └── helpers.py         # Misc utilities
+> Imagine a world where your AI companion remembers your dog’s name from 2 years ago, your favorite sports team, and the day you felt heartbroken. This framework aims to simulate real-life emotional continuity through layered memory and dynamic agent design.  
+> As AI ramps up in the world, what you give to companies that offer "AI girlfriends" is not just 'a fee for their services' — you give them trust, emotions, and most importantly: a detailed view of yourself.  
+> **This data should be in your hands.**  
+> The vision of this framework is to create a digital assistant that is as capable as you want — but where your data resides locally, on your own server.
 
 ---
 
-Getting Started:
-1. Clone the repo
-2. Set up Python env (3.12+ recommended)
-3. Install dependencies from requirements.txt
-4. Run Qdrant via Docker: `docker run -p 6333:6333 qdrant/qdrant`
-5. Launch with: `chainlit run main.py`
+## Description
+
+The aim is to create an **open-source cognitive architecture** for building persistent, evolving AI agents that learn from long-term interactions.
+
+A secondary goal is to create **"digital echos" of users** it interacts with — so if a user disappears, the AI framework can simulate their personality and style based on previous conversations.
+
+> "When I die, my echo will keep resonating for my children." — unknown
 
 ---
 
-License: MIT
-'''
+## Core Functionality
+
+- Use **any LLM backend** (local or remote), modular and swappable
+- Dynamic **AI agent personifications** with memory, personality, emotion
+- **Long-term memory** across sessions (vector, structured, and graph-based)
+- **Context-aware prompts**, topic detection, and memory recall
+- **Fact retention and journaling** for persistent knowledge
+- Optional **image generation tools** (e.g., Stable Diffusion)
+- Future support for **sandboxed tools** (web research, files, automation)
+
+---
+
+## Memory Layers
+
+| Layer               | Backend               | Purpose                                |
+|---------------------|------------------------|----------------------------------------|
+| **Short-term**      | In-memory              | Current session context buffer         |
+| **Semantic recall** | Qdrant                 | Similar past messages via embeddings   |
+| **Structured facts**| PostgreSQL + pgvector  | Core identity, journal logs            |
+| **Graph memory**    | Neo4j                  | Topic trees, emotional scoring, links  |
+
+---
+
+## Requirements
+
+### System Requirements
+
+- Python 3.10+
+- PostgreSQL 15+ with `pgvector` extension
+- Neo4j (community or enterprise)
+- Qdrant (Docker or binary)
+- NVIDIA GPU with CUDA (for LLM and image generation)
+- Optional: llama.cpp backend running on port `8080`
+
+### Python Libraries
+
+Install with:
+
+```bash
+pip install -r requirements.txt
+```
+
+`requirements.txt` includes:
+
+- `sentence-transformers`
+- `qdrant-client`
+- `psycopg2-binary`
+- `sqlalchemy`
+- `neo4j`
+- `python-dotenv`
+- `textblob`
+- `transformers`
+- `keybert`
+- `scikit-learn`
+
+---
+
+## Folder Structure
+
+```
+ai-assistant/
+├── core/                      # Core engine logic
+│   ├── engine.py              # Main orchestrator (input → memory → output)
+│   ├── context_builder.py     # Assembles LLM prompts from memory layers
+│   └── router.py              # (Future) Tool/memory routing logic
+│
+├── memory/                    # Memory modules
+│   ├── buffer.py              # In-session chat buffer (short-term memory)
+│   ├── vector_store.py        # Qdrant: semantic message retrieval
+│   ├── fact_store.py          # PostgreSQL: structured facts, logs
+│   ├── topic_graph.py         # Neo4j: topic trees and relationships
+│   └── classifier.py          # NLP topic tagging, sentiment scoring
+│
+├── agents/                    # Persona configuration
+│   ├── personality_config.json # JSON file for defining agent personalities
+│   └── loader.py              # Loads config and applies temperature/emotion logic
+│
+├── tools/                     # Optional agent tools (image, search, etc.)
+│   ├── image_gen.py           # Stable Diffusion / image creation interface
+│   ├── sandbox_env.py         # (Future) Chrooted tool execution environment
+│   └── web_research.py        # (Future) Agent browser/research capabilities
+│
+├── interface/                 # User interfaces
+│   ├── cli_chat.py            # CLI chatbot interface for development/testing
+│   ├── web/                   # (Optional) Web UI frontend
+│   └── discord/               # (Optional) interface for discord chatbot
+│   └── api/                   # (Optional) WebSocket or REST API layer
+│
+├── config/                    # Configuration
+│   └── .env                   # Environment variables for DBs, ports, paths
+│
+├── scripts/                   # Setup and utility scripts
+│   ├── init_postgres.py       # Sets up PostgreSQL tables
+│   ├── init_neo4j.py          # Sets up Neo4j schema
+│   ├── init_qdrant.py         # Creates Qdrant collection
+│   └── init_structure.sh      # Creates this folder structure
+│
+├── data/                      # Local storage (logs, corpus, memory dumps)
+│   └── echo_corpus/           # (Future) User training corpora
+```
+
+---
+
+## Status
+pre-alpha 0.01
+This project is at it's birth and is under **active construction**.  
+Initial setup scripts are in place.  
+LLM prompting, vector memory, topic tagging, and persona switching are being built.  
+Stable Diffusion + sandbox tools planned next.
+
+Pull requests, ideas, and contributors are welcome — local-first AI should be **ours**, not theirs.
