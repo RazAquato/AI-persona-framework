@@ -15,6 +15,7 @@ cur = conn.cursor()
 
 cur.execute("CREATE EXTENSION IF NOT EXISTS vector;")
 
+# Users table
 cur.execute("""
 CREATE TABLE users (
     id SERIAL PRIMARY KEY,
@@ -25,6 +26,7 @@ CREATE TABLE users (
 );
 """)
 
+# Chat sessions
 cur.execute("""
 CREATE TABLE chat_sessions (
     id SERIAL PRIMARY KEY,
@@ -35,6 +37,7 @@ CREATE TABLE chat_sessions (
 );
 """)
 
+# Chat messages
 cur.execute("""
 CREATE TABLE chat_messages (
     id SERIAL PRIMARY KEY,
@@ -49,6 +52,7 @@ CREATE TABLE chat_messages (
 );
 """)
 
+# Facts table
 cur.execute("""
 CREATE TABLE facts (
     id SERIAL PRIMARY KEY,
@@ -60,6 +64,7 @@ CREATE TABLE facts (
 );
 """)
 
+# Topic tags
 cur.execute("""
 CREATE TABLE topic_tags (
     session_id INT REFERENCES chat_sessions(id),
@@ -69,7 +74,41 @@ CREATE TABLE topic_tags (
 );
 """)
 
+# Expanded metadata table
+cur.execute("""
+CREATE TABLE message_metadata (
+    id SERIAL PRIMARY KEY,
+    message_id INT REFERENCES chat_messages(id) ON DELETE CASCADE,
+
+    -- Memory & context metadata
+    was_buffered BOOLEAN,
+    embedding_used BOOLEAN,
+    memory_hits INT,
+    memory_layers_used TEXT[],  -- ['buffer', 'vector', 'graph']
+
+    -- Tool and timing
+    tool_triggered TEXT,
+    response_latency_ms INT,
+
+    -- Emotional and psychological state
+    emotional_tone TEXT,
+    trust_level FLOAT,
+    love_level FLOAT,
+    humor_level FLOAT,
+    anger_level FLOAT,
+    joy_level FLOAT,
+    sadness_level FLOAT,
+    fear_level FLOAT,
+    curiosity_level FLOAT,
+    dominance_level FLOAT,
+    submission_level FLOAT,
+    personality_tags TEXT[],
+
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+""")
+
 conn.commit()
 cur.close()
 conn.close()
-print("✅ PostgreSQL tables created.")
+print("PostgreSQL tables with full mood and metadata support created.")
