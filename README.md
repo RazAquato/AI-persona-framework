@@ -15,6 +15,12 @@ Modular LLM assistant with memory, tools and persona simulation
 > **This data should be in your hands.**  
 > The vision of this framework is to create a digital assistant that is as capable as you want — but where your data resides locally, on your own server.
 
+## Future vision: AI ecco
+> Imagine having an idea, pitching that idea to "an ecco of yourself", and get feedback based on historic knowledge/past conversations you have had?
+> This idea stems from the "Second brain with zettelkasten" just broader. instad of having hyperlinked notes you can review; imagine having hyperlinked metadata that your AI assistant can distill from, fine-tune, see connections and present to you?
+> Imagine when you one day disappear, that your children could have an ecco to seek guidance from?
+> To support this vision, we need to harvest tons of metadata from each conversation and make that metadata accessible for the AI to train on or search upon
+
 ---
 
 ## Description
