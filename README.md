@@ -95,44 +95,84 @@ pip install -r requirements.txt
 
 ```
 ai-assistant/
-├── core/                      # Core engine logic
-│   ├── engine.py              # Main orchestrator (input → memory → output)
-│   ├── context_builder.py     # Assembles LLM prompts from memory layers
-│   └── router.py              # (Future) Tool/memory routing logic
+├── core/                          # Central processing and orchestration
+│   ├── engine.py                  # Main controller (input → memory → output)
+│   ├── context_builder.py         # Builds final prompt from memory layers
+│   ├── router.py                  # Routes tools, memory, agents dynamically
+│   └── echo_controller.py         # (Future) Handles echo persona invocation
 │
-├── memory/                    # Memory modules
-│   ├── buffer.py              # In-session chat buffer (short-term memory)
-│   ├── vector_store.py        # Qdrant: semantic message retrieval
-│   ├── fact_store.py          # PostgreSQL: structured facts, logs
-│   ├── topic_graph.py         # Neo4j: topic trees and relationships
-│   └── classifier.py          # NLP topic tagging, sentiment scoring
+├── memory/                        # Memory access and logic
+│   ├── buffer.py                  # In-memory chat buffer (short-term memory)
+│   ├── vector_store.py            # Qdrant-based vector memory
+│   ├── fact_store.py              # PostgreSQL: facts, structured memory
+│   ├── topic_graph.py             # Neo4j: topic and relation memory
+│   ├── metadata.py                # Active metadata analysis per message
+│   └── summarizer.py              # (Future) Session summarization and memory decay
 │
-├── agents/                    # Persona configuration
-│   ├── personality_config.json # JSON file for defining agent personalities
-│   └── loader.py              # Loads config and applies temperature/emotion logic
+├── metadata/                      # (New) Raw and processed metadata logs
+│   ├── message_metadata.jsonl     # Exported metadata (topic, sentiment, etc.)
+│   ├── tool_usage.jsonl           # Tool calls per message
+│   └── topic_stats.json           # Aggregated user/topic interaction stats
 │
-├── tools/                     # Optional agent tools (image, search, etc.)
-│   ├── image_gen.py           # (future) Stable Diffusion / image creation interface
-│   ├── sandbox_env.py         # (Future) Chrooted tool execution environment
-│   └── web_research.py        # (Future) Agent browser/research capabilities
+├── agents/                        # Persona configuration and logic
+│   ├── personality_config.json    # Persona definitions (tone, thresholds, etc.)
+│   ├── profiles/                  # Per-agent behavioral rules / extensions
+│   │   └── maya.json              # Example override config
+│   └── loader.py                  # Loads agents and temperature logic
 │
-├── interface/                 # User interfaces
-│   ├── cli_chat.py            # CLI chatbot interface for development/testing
-│   ├── web/                   # (Optional) Web UI frontend
-│   └── discord/               # (Optional) interface for discord chatbot
-│   └── api/                   # (Optional) WebSocket or REST API layer
+├── echo/                          # Echo generation system
+│   ├── builder.py                 # Extracts echo corpus from chat logs
+│   ├── traits_extractor.py        # Analyzes tone, behavior, values
+│   ├── echo_prompt.py             # Creates echo-mode prompts for LLM
+│   └── data/                      # Structured training data
+│       └── user_123/              # Logs and extracted traits
+│           ├── logs.jsonl
+│           ├── facts.json
+│           ├── traits.json
+│           └── sessions/
+│               └── session_2024_01.json
 │
-├── config/                    # Configuration
-│   └── .env                   # Environment variables for DBs, ports, paths
+├── tools/                         # Agent-accessible external tools
+│   ├── image_gen.py               # Stable Diffusion image interface
+│   ├── sandbox_env.py             # Sandboxed chroot environment (file/web)
+│   ├── web_research.py            # Web search & document summarizer
+│   └── tool_registry.py           # Tool definitions and input/output schemas
 │
-├── scripts/                   # Setup and utility scripts
-│   ├── init_postgres.py       # Sets up PostgreSQL tables
-│   ├── init_neo4j.py          # Sets up Neo4j schema
-│   ├── init_qdrant.py         # Creates Qdrant collection
-│   └── init_structure.sh      # Creates this folder structure
+├── interface/                     # User interfaces
+│   ├── cli_chat.py                # Terminal interface
+│   ├── api/                       # REST or WebSocket server
+│   │   └── routes.py
+│   ├── web/                       # Optional web-based UI
+│   └── discord/                   # Optional Discord chatbot interface
 │
-├── data/                      # Local storage (logs, corpus, memory dumps)
-│   └── echo_corpus/           # (Future) User training corpora
+├── config/                        # Environment and runtime config
+│   ├── .env                       # Environment variables
+│   └── settings.yaml              # (Optional) Central override config
+│
+├── analytics/                     # (Optional) Memory + metadata visualizations
+│   ├── graph_dashboard.ipynb      # View Neo4j topics and entity graphs
+│   ├── metadata_timeline.ipynb    # Plot emotional arc over time
+│   └── memory_report.py           # Exports memory snapshots per user
+│
+├── scripts/                       # Init and admin tools
+│   ├── init_postgres.py
+│   ├── init_qdrant.py
+│   ├── init_neo4j.py
+│   ├── init_structure.sh
+│   └── migrate_logs_to_echo.py    # Convert chat logs into echo-ready format
+│
+├── data/                          # Local data + storage
+│   ├── logs/                      # Raw conversation logs
+│   ├── backups/                   # Database dumps
+│   └── echo_corpus/               # (Deprecated; now in echo/data/)
+│
+├── tests/                         # Unit and integration tests
+│   └── test_memory_flow.py
+│
+├── requirements.txt
+├── README.md
+├── CONTRIBUTING.md
+└── LICENSE
 ```
 
 ---
