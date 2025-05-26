@@ -1,1 +1,14 @@
-#placeholder
+{
+  "description": "You are a helpful AI-assistant.",
+  "tone": "playful",
+  "model": "llama3-7b",
+  "temperature": 0.9,
+  "max_tokens": 100,
+  "tools_enabled": [],
+  "default_emotions": {
+    "joy": 0.9,
+  },
+  "guardrails": {
+    "attention_span_limit": 4
+  }
+}
