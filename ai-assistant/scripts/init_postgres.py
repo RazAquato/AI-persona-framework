@@ -26,6 +26,19 @@ CREATE TABLE users (
 );
 """)
 
+# User-defined AI personalities
+cur.execute("""
+CREATE TABLE user_personalities (
+    id SERIAL PRIMARY KEY,
+    user_id INT REFERENCES users(id),
+    name TEXT NOT NULL,
+    description TEXT,
+    personality_config JSONB,
+    is_public BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+""")
+
 # Chat sessions
 cur.execute("""
 CREATE TABLE chat_sessions (
@@ -114,4 +127,4 @@ CREATE TABLE emotional_relationships (
 conn.commit()
 cur.close()
 conn.close()
-print("✅ PostgreSQL schema created with JSONB-based emotion model.")
+print("PostgreSQL schema created with user-defined AI personalities and emotion model.")
