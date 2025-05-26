@@ -6,9 +6,26 @@
   "max_tokens": 100,
   "tools_enabled": [],
   "default_emotions": {
-    "joy": 0.9,
+    "joy": 0.9
   },
   "guardrails": {
-    "attention_span_limit": 4
+    "avoid_advice_until_trust": true,
+    "nsfw_capable": false,
+    "avoid_nsfw_until_love": false,
+    "avoid_emotional_disclosure_until_trust": true,
+    "mirror_user_emotions": true,
+    "probing_question_mode": false,
+    "is_ego_free": false,
+    "needs_validation_to_engage": true,
+    "avoid_repetition": true,
+    "simulate_sleep_cycle": true,
+    "is_teachable": true
+  },
+   "thresholds": {
+    "attention_span_limit": 4,
+    "nsfw_activation": {
+      "love": 0.7,
+      "trust": 0.6
+    }
   }
 }
