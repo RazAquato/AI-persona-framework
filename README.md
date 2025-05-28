@@ -4,7 +4,7 @@
 Modular LLM assistant with memory, tools and persona simulation
 
 **Author:** Kenneth  
-**License:** GNU
+**License:** GPLv3
 
 ## License
 
