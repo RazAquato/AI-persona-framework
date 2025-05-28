@@ -4,7 +4,14 @@
 Modular LLM assistant with memory, tools and persona simulation
 
 **Author:** Kenneth  
-**License:** MIT
+**License:** GNU
+
+## License
+
+This project is licensed under the GNU General Public License v3.0 (GPLv3).  
+You are free to use, modify, and distribute this software, provided that any derivative works are also licensed under the GPLv3.
+
+For more details, see the [LICENSE](LICENSE) file.
 
 ---
 
