@@ -8,10 +8,61 @@
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-#placeholder
+import os
+from dotenv import load_dotenv
+from neo4j import GraphDatabase
+
+# Load environment
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+ENV_PATH = os.path.join(BASE_DIR, "..", "config", ".env")
+load_dotenv(dotenv_path=os.path.abspath(ENV_PATH))
+
+NEO4J_URI = os.getenv("NEO4J_URI")
+NEO4J_USER = os.getenv("NEO4J_USER")
+NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
+
+driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
+
+
+def create_topic_relation(user_id: int, topic: str, emotion: dict = None):
+    """
+    Create or update a relationship between a user and a topic,
+    including optional emotional metadata.
+    """
+    with driver.session() as session:
+        session.run("""
+            MERGE (u:User {id: $user_id})
+            MERGE (t:Topic {name: $topic})
+            MERGE (u)-[r:DISCUSSED]->(t)
+            SET r += $emotion
+        """, {
+            "user_id": user_id,
+            "topic": topic,
+            "emotion": emotion or {}
+        })
+
+
+def get_related_topics(topic: str):
+    """
+    Retrieve other topics discussed by users who also discussed the given topic.
+    """
+    with driver.session() as session:
+        result = session.run("""
+            MATCH (:Topic {name: $topic})<-[:DISCUSSED]-(u:User)-[:DISCUSSED]->(related:Topic)
+            RETURN DISTINCT related.name AS topic
+        """, {"topic": topic})
+        return [record["topic"] for record in result]
+
+
+def close_driver():
+    """
+    Explicitly close the Neo4j driver (recommended).
+    """
+    driver.close()
+
