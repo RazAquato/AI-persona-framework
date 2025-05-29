@@ -19,7 +19,10 @@ import os
 import json
 from dotenv import load_dotenv
 
-load_dotenv(dotenv_path=os.path.expanduser("~/ai-assistant/config/.env"))
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+ENV_PATH = os.path.join(BASE_DIR, "..", "config", ".env")
+
+load_dotenv(dotenv_path=os.path.abspath(ENV_PATH))
 
 def get_db_connection():
     return psycopg2.connect(

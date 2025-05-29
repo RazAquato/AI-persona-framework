@@ -12,15 +12,21 @@
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+# along with this program.  If not, see <https://www.gnu.org/licenses/>
 
-from qdrant_client import QdrantClient, models
 import os
 import yaml
 from dotenv import load_dotenv
+from qdrant_client import QdrantClient, models
 
-load_dotenv(dotenv_path=os.path.expanduser("~/ai-assistant/config/.env"))
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+ENV_PATH = os.path.join(BASE_DIR, "..", "config", ".env")
+EMOTION_PATH = os.path.join(BASE_DIR, "..", "config", "emotions.yaml")
 
+load_dotenv(dotenv_path=os.path.abspath(ENV_PATH))
+
+
+# Connect to Qdrant
 qdrant = QdrantClient(
     host=os.getenv("QDRANT_HOST"),
     port=int(os.getenv("QDRANT_PORT"))
@@ -28,27 +34,37 @@ qdrant = QdrantClient(
 
 collection_name = os.getenv("QDRANT_COLLECTION", "chat_memory")
 
-# Load emotion definitions from YAML
-with open(os.path.expanduser(os.getenv("EMOTION_CONFIG_PATH", "./config/emotions.yaml")), "r") as f:
+# Load emotion definitions
+with open(EMOTION_PATH, "r") as f:
     config = yaml.safe_load(f)
 
 emotions = config.get("emotions", {})
 
-# Base schema
+# Base payload schema with standard fields
 payload_schema = {
-    "role": models.PayloadSchemaType.keyword,
-    "agent": models.PayloadSchemaType.keyword,
-    "topics": models.PayloadSchemaType.keyword,
-    "tool_used": models.PayloadSchemaType.keyword,
-    "emotional_tone": models.PayloadSchemaType.keyword
+    "role": models.PayloadSchemaType.KEYWORD,
+    "agent": models.PayloadSchemaType.KEYWORD,
+    "topics": models.PayloadSchemaType.KEYWORD,
+    "emotional_tone": models.PayloadSchemaType.KEYWORD,
+    "tool_used": models.PayloadSchemaType.KEYWORD
 }
 
-# Add all emotion float fields dynamically
-for emotion in emotions:
-    payload_schema[f"{emotion}_level"] = models.PayloadSchemaType.float
+# Dynamically add emotion fields based on YAML definition
+for emotion_name, emotion_type in emotions.items():
+    if emotion_type == "float":
+        payload_schema[f"{emotion_name}_level"] = models.PayloadSchemaType.FLOAT
+    elif emotion_type == "keyword":
+        payload_schema[f"{emotion_name}_level"] = models.PayloadSchemaType.KEYWORD
+    # Add support for more types if needed
 
-# Create collection
-qdrant.recreate_collection(
+# Create or reset Qdrant collection
+# Check if collection exists
+if qdrant.collection_exists(collection_name):
+    print(f"Collection '{collection_name}' already exists. Deleting and recreating...")
+    qdrant.delete_collection(collection_name)
+
+# Now create the collection
+qdrant.create_collection(
     collection_name=collection_name,
     vectors_config=models.VectorParams(
         size=int(os.getenv("VECTOR_SIZE", 384)),
@@ -60,10 +76,11 @@ qdrant.recreate_collection(
     on_disk_payload=True
 )
 
-# Apply schema
-qdrant.set_payload_schema(
-    collection_name=collection_name,
-    schema=payload_schema
-)
+# Apply payload schema
+#qdrant.set_payload_schema(
+#    collection_name=collection_name,
+#    schema=payload_schema
+#)
 
-print(f"✅ Qdrant collection '{collection_name}' initialized with dynamic emotion schema.")
+print(f"Qdrant collection '{collection_name}' initialized with dynamic emotion schema from {EMOTION_PATH}.")
+
