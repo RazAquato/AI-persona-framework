@@ -19,7 +19,9 @@ import json
 import yaml
 from agent_loader import load_user_agents
 
-EMOTION_CONFIG_PATH = os.getenv("EMOTION_CONFIG_PATH", "./config/emotions.yaml")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+ENV_PATH = os.path.join(BASE_DIR, "..", "config", ".env")
+EMOTION_CONFIG_PATH = os.path.join(BASE_DIR, "..", "config", "emotions.yaml")
 
 def load_emotion_defaults():
     with open(EMOTION_CONFIG_PATH, "r") as f:
