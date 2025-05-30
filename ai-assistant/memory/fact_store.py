@@ -35,32 +35,117 @@ PG_CONFIG = {
 def get_connection():
     return psycopg2.connect(**PG_CONFIG)
 
-def store_fact(user_id: str, fact: str, tags: list = None):
+def store_fact(user_id: int, fact: str, tags: list = None, relevance_score: float = None, source_chat_id: int = None):
     """
     Store a structured fact associated with a user.
     """
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
-        INSERT INTO facts (user_id, text, tags)
-        VALUES (%s, %s, %s);
-    """, (user_id, fact, tags))
+        INSERT INTO facts (user_id, text, tags, relevance_score, source_chat_id)
+        VALUES (%s, %s, %s, %s, %s);
+    """, (user_id, fact, tags, relevance_score, source_chat_id))
     conn.commit()
     cur.close()
     conn.close()
 
-def get_facts(user_id: str):
+def get_facts(user_id: int):
     """
     Retrieve all structured facts for a given user.
     """
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
-        SELECT text, tags FROM facts
+        SELECT id, text, tags, relevance_score FROM facts
         WHERE user_id = %s;
     """, (user_id,))
     results = cur.fetchall()
     cur.close()
     conn.close()
     return results
+
+def get_facts_by_tag(user_id: int, tag: str):
+    """
+    Return facts for a user filtered by tag.
+    """
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id, text, tags FROM facts
+        WHERE user_id = %s AND %s = ANY(tags);
+    """, (user_id, tag))
+    results = cur.fetchall()
+    cur.close()
+    conn.close()
+    return results
+
+def delete_fact(fact_id: int):
+    """
+    Delete a specific fact by its ID.
+    """
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM facts WHERE id = %s;", (fact_id,))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def get_top_facts(user_id: int, limit: int = 5, sort_by: str = 'relevance_score'):
+    """
+    Return top-N facts sorted by relevance or ID, excluding NULL scores if sorting by relevance.
+    """
+    if sort_by not in {"relevance_score", "id"}:
+        sort_by = "relevance_score"
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    if sort_by == "relevance_score":
+        cur.execute("""
+            SELECT id, text, relevance_score FROM facts
+            WHERE user_id = %s AND relevance_score IS NOT NULL
+            ORDER BY relevance_score DESC
+            LIMIT %s;
+        """, (user_id, limit))
+    else:
+        cur.execute("""
+            SELECT id, text, relevance_score FROM facts
+            WHERE user_id = %s
+            ORDER BY id DESC
+            LIMIT %s;
+        """, (user_id, limit))
+
+    results = cur.fetchall()
+    cur.close()
+    conn.close()
+    return results
+
+def update_fact(fact_id: int, new_text: str = None, tags: list = None, relevance_score: float = None):
+    """
+    Update fields of a fact.
+    """
+    conn = get_connection()
+    cur = conn.cursor()
+    updates = []
+    values = []
+
+    if new_text:
+        updates.append("text = %s")
+        values.append(new_text)
+    if tags is not None:
+        updates.append("tags = %s")
+        values.append(tags)
+    if relevance_score is not None:
+        updates.append("relevance_score = %s")
+        values.append(relevance_score)
+
+    if not updates:
+        return
+
+    values.append(fact_id)
+    query = f"UPDATE facts SET {', '.join(updates)} WHERE id = %s;"
+    cur.execute(query, tuple(values))
+    conn.commit()
+    cur.close()
+    conn.close()
 

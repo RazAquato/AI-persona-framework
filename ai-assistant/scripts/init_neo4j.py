@@ -17,7 +17,7 @@ with driver.session() as session:
     try:
         session.run("CALL apoc.schema.assert({}, {})")  # Only works if APOC is installed
     except Exception:
-        print("⚠️ Skipped APOC schema cleanup (plugin not available or disabled)")
+        print("Skipped APOC schema cleanup (plugin not available or disabled)")
 
     # New-style schema (Neo4j v5+)
     session.run("CREATE CONSTRAINT user_id_unique IF NOT EXISTS FOR (u:User) REQUIRE u.id IS UNIQUE")

@@ -57,7 +57,8 @@ def get_related_topics(topic: str):
             MATCH (:Topic {name: $topic})<-[:DISCUSSED]-(u:User)-[:DISCUSSED]->(related:Topic)
             RETURN DISTINCT related.name AS topic
         """, {"topic": topic})
-        return [record["topic"] for record in result]
+        topics = [record["topic"] for record in result]
+    return topics
 
 
 def close_driver():
