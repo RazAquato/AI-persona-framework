@@ -91,4 +91,3 @@ def search_similar_vectors(query_vector: list, top_k: int = 5, filters: dict = N
     )
 
     return results
-

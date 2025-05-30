@@ -27,7 +27,8 @@ NEO4J_URI = os.getenv("NEO4J_URI")
 NEO4J_USER = os.getenv("NEO4J_USER")
 NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
 
-driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
+def get_driver():
+    return GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
 
 
 def create_topic_relation(user_id: int, topic: str, emotion: dict = None):
@@ -35,35 +36,29 @@ def create_topic_relation(user_id: int, topic: str, emotion: dict = None):
     Create or update a relationship between a user and a topic,
     including optional emotional metadata.
     """
-    with driver.session() as session:
-        session.run("""
-            MERGE (u:User {id: $user_id})
-            MERGE (t:Topic {name: $topic})
-            MERGE (u)-[r:DISCUSSED]->(t)
-            SET r += $emotion
-        """, {
-            "user_id": user_id,
-            "topic": topic,
-            "emotion": emotion or {}
-        })
+    with get_driver() as driver:
+        with driver.session() as session:
+            session.run("""
+                MERGE (u:User {id: $user_id})
+                MERGE (t:Topic {name: $topic})
+                MERGE (u)-[r:DISCUSSED]->(t)
+                SET r += $emotion
+            """, {
+                "user_id": user_id,
+                "topic": topic,
+                "emotion": emotion or {}
+            })
 
 
 def get_related_topics(topic: str):
     """
     Retrieve other topics discussed by users who also discussed the given topic.
     """
-    with driver.session() as session:
-        result = session.run("""
-            MATCH (:Topic {name: $topic})<-[:DISCUSSED]-(u:User)-[:DISCUSSED]->(related:Topic)
-            RETURN DISTINCT related.name AS topic
-        """, {"topic": topic})
-        topics = [record["topic"] for record in result]
-    return topics
-
-
-def close_driver():
-    """
-    Explicitly close the Neo4j driver (recommended).
-    """
-    driver.close()
-
+    with get_driver() as driver:
+        with driver.session() as session:
+            result = session.run("""
+                MATCH (:Topic {name: $topic})<-[:DISCUSSED]-(u:User)-[:DISCUSSED]->(related:Topic)
+                RETURN DISTINCT related.name AS topic
+            """, {"topic": topic})
+            topics = [record["topic"] for record in result]
+        return topics

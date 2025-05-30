@@ -1,30 +1,18 @@
 # AI-persona-framework
 # Copyright (C) 2025 Kenneth Haider
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program. If not, see <https://www.gnu.org/licenses/>.
+# GPLv3 License - See <https://www.gnu.org/licenses/>
 
 import unittest
 import os
 import psycopg2
 from dotenv import load_dotenv
-
 from memory.chat_store import (
     start_chat_session,
     log_chat_message,
     get_chat_messages,
     get_last_session
 )
+
 
 class TestChatStore(unittest.TestCase):
 
@@ -58,28 +46,37 @@ class TestChatStore(unittest.TestCase):
     def test_start_chat_session(self):
         session_id = start_chat_session(self.user_id, personality_id="TestPersona", context_summary="Test run.")
         self.assertIsInstance(session_id, int)
-        self.session_id = session_id  # Save for reuse
 
-    def test_log_and_get_chat_message(self):
+    def test_get_chat_messages_empty(self):
         session_id = start_chat_session(self.user_id)
-        message_id = log_chat_message(
-            session_id,
-            self.user_id,
-            role="user",
-            content="Hello assistant!",
-            sentiment=0.7,
-            topics=["greeting", "init"]
-        )
+        messages = get_chat_messages(session_id)
+        self.assertEqual(messages, [])
+
+    def test_log_and_get_chat_messages_ordered(self):
+        session_id = start_chat_session(self.user_id)
+        log_chat_message(session_id, self.user_id, "user", "Message one")
+        log_chat_message(session_id, self.user_id, "assistant", "Message two")
+        messages = get_chat_messages(session_id)
+        self.assertEqual(len(messages), 2)
+        self.assertEqual(messages[0][2], "Message one")
+        self.assertEqual(messages[1][2], "Message two")
+
+    def test_store_chat_with_embedding(self):
+        session_id = start_chat_session(self.user_id)
+        embedding = [0.01] * 384
+        message_id = log_chat_message(session_id, self.user_id, "user", "Embedded msg", embedding=embedding)
         self.assertIsInstance(message_id, int)
 
-        messages = get_chat_messages(session_id)
-        self.assertGreaterEqual(len(messages), 1)
-        self.assertEqual(messages[0][2], "Hello assistant!")
+    def test_invalid_role_raises_error(self):
+        session_id = start_chat_session(self.user_id)
+        with self.assertRaises(Exception):
+            log_chat_message(session_id, self.user_id, "alien", "Invalid role")
 
     def test_get_last_session(self):
-        session_id = start_chat_session(self.user_id, personality_id="echo")
-        last_session = get_last_session(self.user_id)
-        self.assertEqual(last_session, session_id)
+        session_id = start_chat_session(self.user_id)
+        last_id = get_last_session(self.user_id)
+        self.assertEqual(session_id, last_id)
+
 
 if __name__ == "__main__":
     unittest.main()

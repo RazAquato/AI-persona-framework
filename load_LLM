@@ -3,6 +3,7 @@ exec -a llama-evathene ./llama.cpp/build/bin/llama-server \
   -m /modeller/Evathene-v1.3/Evathene-v1.3-Q4_K_M.gguf \
   --port 8080 \
   --ctx-size 8192 \
-  --n-gpu-layers 999 \
-  --main-gpu 0 
+  --n-gpu-layers 80 \
+  --main-gpu 0 \
+  --host 0.0.0.0 
 

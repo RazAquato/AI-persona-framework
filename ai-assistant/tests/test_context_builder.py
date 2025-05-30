@@ -20,7 +20,8 @@ import psycopg2
 from dotenv import load_dotenv
 from memory.fact_store import store_fact
 from memory.vector_store import store_embedding
-from memory.topic_graph import create_topic_relation, close_driver
+from memory.topic_graph import create_topic_relation
+#, close_driver
 from memory.context_builder import build_context
 
 class TestContextBuilder(unittest.TestCase):
@@ -52,12 +53,12 @@ class TestContextBuilder(unittest.TestCase):
         store_embedding(sample_embedding, {
             "agent": "maya",
             "role": "user",
-            "topics": ["climbing", "sports"]
+            "topics": ["climbing", "adventure"]
         })
 
         # Seed topic link
-        create_topic_relation(cls.user_id, "climbing", {"joy_level": 0.8})
-        create_topic_relation(cls.user_id, "adventure", {"joy_level": 0.7})
+        create_topic_relation(cls.user_id, "hiking", {"joy_level": 0.8})
+        create_topic_relation(cls.user_id, "nature", {"joy_level": 0.7})
 
     @classmethod
     def tearDownClass(cls):
@@ -66,7 +67,7 @@ class TestContextBuilder(unittest.TestCase):
         cls.conn.commit()
         cls.cur.close()
         cls.conn.close()
-        close_driver()
+        #close_driver()
 
     def test_context_builder_output(self):
         context = build_context(self.user_id, "Tell me something about climbing")
