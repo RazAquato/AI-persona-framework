@@ -23,7 +23,8 @@ from neo4j import GraphDatabase
 from memory.embedding import embed_text
 from memory.vector_store import store_embedding, search_similar_vectors
 from memory.fact_store import store_fact, get_facts
-from memory.topic_graph import create_topic_relation, get_related_topics, close_driver
+from memory.topic_graph import create_topic_relation, get_related_topics
+#, close_driver
 
 
 class TestMemoryFlow(unittest.TestCase):
@@ -41,12 +42,12 @@ class TestMemoryFlow(unittest.TestCase):
 
         # PostgreSQL connection
         self.conn = psycopg2.connect(
-            dbname=os.getenv("PG_DATABASE"),
-            user=os.getenv("PG_USER"),
-            password=os.getenv("PG_PASSWORD"),
-            host=os.getenv("PG_HOST"),
-            port=os.getenv("PG_PORT")
-        )
+                dbname=os.getenv("PG_DATABASE"),
+                user=os.getenv("PG_USER"),
+                password=os.getenv("PG_PASSWORD"),
+                host=os.getenv("PG_HOST"),
+                port=os.getenv("PG_PORT")
+                )
         cur = self.conn.cursor()
         cur.execute("INSERT INTO users (name) VALUES (%s) RETURNING id;", ("Test User",))
         self.test_user_id = cur.fetchone()[0]
@@ -74,12 +75,12 @@ class TestMemoryFlow(unittest.TestCase):
             session.run("MATCH (t:Topic) WHERE t.name IN [$t1, $t2] DETACH DELETE t", {
                 "t1": self.sample_topic,
                 "t2": self.sample_related_topic
-            })
+                })
         self.driver.close()
 
-    @classmethod
-    def tearDownClass(cls):
-        close_driver()
+    #@classmethod
+    #def tearDownClass(cls):
+    #    close_driver()
 
     def test_embedding_and_qdrant(self):
         embedding = embed_text(self.sample_text)
@@ -99,7 +100,8 @@ class TestMemoryFlow(unittest.TestCase):
     def test_fact_store_postgres(self):
         store_fact(self.test_user_id, self.sample_fact, tags=["outdoors", "hobby"])
         facts = get_facts(self.test_user_id)
-        self.assertTrue(any(self.sample_fact in f for f, _ in facts))
+        #self.assertTrue(any(self.sample_fact in f for f, _ in facts))
+        self.assertTrue(any(self.sample_fact in row[1] for row in facts))
         print("Postgres facts:", facts)
 
     def test_topic_graph_neo4j(self):

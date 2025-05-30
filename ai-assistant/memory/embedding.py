@@ -48,3 +48,5 @@ def embed_text(text: str) -> list:
     """
     return _embedding_model.encode(text).tolist()
 
+def embed_batch(texts: list[str]) -> list[list[float]]:
+    return _embedding_model.encode(texts, convert_to_numpy=False)

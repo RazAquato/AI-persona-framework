@@ -21,8 +21,7 @@ from neo4j import GraphDatabase
 
 from memory.topic_graph import (
     create_topic_relation,
-    get_related_topics,
-    close_driver
+    get_related_topics
 )
 
 class TestTopicGraph(unittest.TestCase):
@@ -63,7 +62,7 @@ class TestTopicGraph(unittest.TestCase):
                 "t3": cls.topic3
             })
         cls.driver.close()
-        close_driver()
+        #close_driver()
 
     def test_create_and_retrieve_single_relation(self):
         #create two topics for same user

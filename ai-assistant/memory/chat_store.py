@@ -19,7 +19,7 @@ import psycopg2
 from psycopg2.extras import Json
 from dotenv import load_dotenv
 
-# Load environment variables
+# Load environment
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ENV_PATH = os.path.join(BASE_DIR, "..", "config", ".env")
 load_dotenv(dotenv_path=os.path.abspath(ENV_PATH))
@@ -37,80 +37,90 @@ def get_connection():
 
 def start_chat_session(user_id: int, personality_id: str = None, context_summary: str = None) -> int:
     """
-    Create a new chat session for a user.
+    Create a new chat session and return the session ID.
     """
     conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("""
-        INSERT INTO chat_sessions (user_id, personality_id, context_summary)
-        VALUES (%s, %s, %s)
-        RETURNING id;
-    """, (user_id, personality_id, context_summary))
-    session_id = cur.fetchone()[0]
-    conn.commit()
-    cur.close()
-    conn.close()
-    return session_id
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO chat_sessions (user_id, personality_id, context_summary)
+                VALUES (%s, %s, %s)
+                RETURNING id;
+            """, (user_id, personality_id, context_summary))
+            session_id = cur.fetchone()[0]
+        conn.commit()
+        return session_id
+    finally:
+        conn.close()
 
-def log_chat_message(session_id: int, user_id: int, role: str, content: str,
-                     embedding: list = None, sentiment: float = None, topics: list = None) -> int:
+def log_chat_message(
+    session_id: int,
+    user_id: int,
+    role: str,
+    content: str,
+    embedding: list = None,
+    sentiment: float = None,
+    topics: list = None
+) -> int:
     """
-    Store a single chat message in the database.
+    Log a chat message in the database and return its message ID.
     """
     conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("""
-        INSERT INTO chat_messages (
-            session_id, user_id, role, content, embedding, sentiment, topics
-        )
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
-        RETURNING id;
-    """, (
-        session_id,
-        user_id,
-        role,
-        content,
-        embedding if embedding else None,
-        sentiment,
-        topics
-    ))
-    message_id = cur.fetchone()[0]
-    conn.commit()
-    cur.close()
-    conn.close()
-    return message_id
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO chat_messages (
+                    session_id, user_id, role, content, embedding, sentiment, topics
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                RETURNING id;
+            """, (
+                session_id,
+                user_id,
+                role,
+                content,
+                embedding,
+                sentiment,
+                topics
+            ))
+            message_id = cur.fetchone()[0]
+        conn.commit()
+        return message_id
+    finally:
+        conn.close()
 
 def get_chat_messages(session_id: int):
     """
-    Retrieve all messages for a specific chat session.
+    Retrieve all messages from a chat session, ordered by time.
     """
     conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT id, role, content, sentiment, topics
-        FROM chat_messages
-        WHERE session_id = %s
-        ORDER BY timestamp ASC;
-    """, (session_id,))
-    results = cur.fetchall()
-    cur.close()
-    conn.close()
-    return results
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, role, content, sentiment, topics
+                FROM chat_messages
+                WHERE session_id = %s
+                ORDER BY timestamp ASC;
+            """, (session_id,))
+            return cur.fetchall()
+    finally:
+        conn.close()
 
 def get_last_session(user_id: int):
     """
-    Get the most recent chat session for a user.
+    Get the most recent session ID for a user, if any.
     """
     conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT id FROM chat_sessions
-        WHERE user_id = %s
-        ORDER BY start_time DESC
-        LIMIT 1;
-    """, (user_id,))
-    row = cur.fetchone()
-    cur.close()
-    conn.close()
-    return row[0] if row else None
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id FROM chat_sessions
+                WHERE user_id = %s
+                ORDER BY start_time DESC
+                LIMIT 1;
+            """, (user_id,))
+            row = cur.fetchone()
+            return row[0] if row else None
+    finally:
+        conn.close()
 
