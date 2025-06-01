@@ -13,6 +13,24 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
+import sys
+import os
+from dotenv import load_dotenv
+
+# Add memory-server to path
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Load shared .env first
+SHARED_ENV_PATH = os.path.abspath(os.path.join(BASE_DIR, "..", "..", "shared", "config", ".env"))
+load_dotenv(dotenv_path=SHARED_ENV_PATH)
+
+# Load local .env (override shared values if needed)
+LOCAL_ENV_PATH = os.path.abspath(os.path.join(BASE_DIR, "..", "config", ".env"))
+load_dotenv(dotenv_path=LOCAL_ENV_PATH, override=True)
+
+MEMORY_PATH = os.path.abspath(os.path.join(BASE_DIR, "..", "..", "memory-server"))
+sys.path.append(MEMORY_PATH)
+
 
 from memory.chat_store import get_last_session, start_chat_session, log_chat_message, get_chat_messages
 from memory.context_builder import build_context

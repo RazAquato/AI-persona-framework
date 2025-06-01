@@ -18,12 +18,23 @@ import os
 import json
 from dotenv import load_dotenv
 
-# Load .env
+# Base path of current script
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-ENV_PATH = os.path.join(BASE_DIR, "..", "config", ".env")
-load_dotenv(dotenv_path=os.path.abspath(ENV_PATH))
 
-CONFIG_PATH = os.getenv("AGENT_CONFIG_PATH", "./agents/personality_config.json")
+# Load shared config first
+SHARED_ENV_PATH = os.path.abspath(os.path.join(BASE_DIR, "..", "..", "shared", "config", ".env"))
+load_dotenv(dotenv_path=SHARED_ENV_PATH)
+
+# Then load local config (overrides shared if keys overlap)
+LOCAL_ENV_PATH = os.path.abspath(os.path.join(BASE_DIR, "..", "config", ".env"))
+load_dotenv(dotenv_path=LOCAL_ENV_PATH, override=True)
+
+#print("Exists:", os.path.exists(LOCAL_ENV_PATH))
+#print("Exists:", os.path.exists(SHARED_ENV_PATH))
+CONFIG_PATH = os.getenv("AGENT_CONFIG_PATH")
+
+#print("Shared ENV loaded from:", SHARED_ENV_PATH)
+#print("Local ENV loaded from :", LOCAL_ENV_PATH)
 
 
 def load_persona_config(personality_id: str = "default") -> dict:

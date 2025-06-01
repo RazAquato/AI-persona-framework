@@ -83,4 +83,3 @@ qdrant.create_collection(
 #)
 
 print(f"Qdrant collection '{collection_name}' initialized with dynamic emotion schema from {EMOTION_PATH}.")
-

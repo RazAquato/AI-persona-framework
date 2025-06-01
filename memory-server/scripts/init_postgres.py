@@ -147,3 +147,4 @@ conn.commit()
 cur.close()
 conn.close()
 print("PostgreSQL schema created with user-defined AI personalities and emotion model.")
+

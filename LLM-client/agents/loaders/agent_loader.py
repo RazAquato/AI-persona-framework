@@ -19,10 +19,16 @@ import os
 import json
 from dotenv import load_dotenv
 
+# Base path of current script
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-ENV_PATH = os.path.join(BASE_DIR, "..", "config", ".env")
 
-load_dotenv(dotenv_path=os.path.abspath(ENV_PATH))
+# Load shared config first
+SHARED_ENV_PATH = os.path.abspath(os.path.join(BASE_DIR, "..", "..", "..", "shared", "config", ".env"))
+load_dotenv(dotenv_path=SHARED_ENV_PATH)
+
+# Then load local config (overrides shared if keys overlap)
+LOCAL_ENV_PATH = os.path.abspath(os.path.join(BASE_DIR, "..", "..", "config", ".env"))
+load_dotenv(dotenv_path=LOCAL_ENV_PATH, override=True)
 
 def get_db_connection():
     return psycopg2.connect(
@@ -64,5 +70,5 @@ def load_user_agents(user_id: int):
 
 if __name__ == "__main__":
     import pprint
-    user_id = 1  # for test/demo
+    user_id = 52  # for test/demo
     pprint.pprint(load_user_agents(user_id))

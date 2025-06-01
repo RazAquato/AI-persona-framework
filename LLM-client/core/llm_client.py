@@ -19,12 +19,20 @@ import json
 import requests
 from dotenv import load_dotenv
 
-# Load environment
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-ENV_PATH = os.path.join(BASE_DIR, "..", "config", ".env")
-load_dotenv(dotenv_path=os.path.abspath(ENV_PATH))
+import os
+from dotenv import load_dotenv
 
-LLM_SERVER = os.getenv("LLM_SERVER", "http://localhost:8080")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Load shared config first
+SHARED_ENV_PATH = os.path.abspath(os.path.join(BASE_DIR, "..", "..", "shared", "config", ".env"))
+load_dotenv(dotenv_path=SHARED_ENV_PATH)
+
+# Then load local config (overrides shared if keys overlap)
+LOCAL_ENV_PATH = os.path.abspath(os.path.join(BASE_DIR, "..", "config", ".env"))
+load_dotenv(dotenv_path=LOCAL_ENV_PATH, override=True)
+
+LLM_SERVER = os.getenv("LLM_SERVER")
 COMPLETION_URL = LLM_SERVER.rstrip("/") + "/completion"
 HEADERS = {"Content-Type": "application/json"}
 
