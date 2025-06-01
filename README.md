@@ -83,13 +83,15 @@ You can read more under the doc/ folder on how this is intented to work.
 
 ### Python Libraries
 
+##
+this is not done yet! we aim for modular requirements for LLM client and memory-server
 Install with:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-`requirements.txt` includes:
+`requirements.txt` will probably include:
 
 - `sentence-transformers`
 - `qdrant-client`
