@@ -17,11 +17,19 @@
 import os
 import json
 import yaml
-from agent_loader import load_user_agents
+from .agent_loader import load_user_agents
+from dotenv import load_dotenv
 
+# Base path of current script
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-ENV_PATH = os.path.join(BASE_DIR, "..", "config", ".env")
-EMOTION_CONFIG_PATH = os.path.join(BASE_DIR, "..", "config", "emotions.yaml")
+
+# Load shared config first
+SHARED_ENV_PATH = os.path.abspath(os.path.join(BASE_DIR, "..", "..", "..", "shared", "config", ".env"))
+load_dotenv(dotenv_path=SHARED_ENV_PATH)
+
+# Then load local config (overrides shared if keys overlap)
+EMOTION_CONFIG_PATH=os.path.join(os.path.dirname(SHARED_ENV_PATH), "emotions.yaml")
+LOCAL_ENV_PATH = os.path.abspath(os.path.join(BASE_DIR, "..", "..", "config", ".env"))
 
 def load_emotion_defaults():
     with open(EMOTION_CONFIG_PATH, "r") as f:
@@ -50,6 +58,6 @@ def load_active_agent(user_id, agent_name):
 
 if __name__ == "__main__":
     import pprint
-    user_id = 1
-    agent_name = "Bernie"
+    user_id = 52
+    agent_name = "HelperBot"
     pprint.pprint(load_active_agent(user_id, agent_name))
