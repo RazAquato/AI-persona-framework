@@ -106,84 +106,114 @@ pip install -r requirements.txt
 ## Folder Structure
 
 ```
-ai-assistant/
-├── core/                          # Central processing and orchestration
-│   ├── engine.py                  # Main controller (input → memory → output)
-│   ├── context_builder.py         # Builds final prompt from memory layers
-│   ├── router.py                  # Routes tools, memory, agents dynamically
-│   └── echo_controller.py         # (Future) Handles echo persona invocation
-│
-├── memory/                        # Memory access and logic
-│   ├── buffer.py                  # In-memory chat buffer (short-term memory)
-│   ├── vector_store.py            # Qdrant-based vector memory
-│   ├── fact_store.py              # PostgreSQL: facts, structured memory
-│   ├── topic_graph.py             # Neo4j: topic and relation memory
-│   ├── metadata.py                # Active metadata analysis per message
-│   └── summarizer.py              # (Future) Session summarization and memory decay
-│
-├── metadata/                      # (New) Raw and processed metadata logs
-│   ├── message_metadata.jsonl     # Exported metadata (topic, sentiment, etc.)
-│   ├── tool_usage.jsonl           # Tool calls per message
-│   └── topic_stats.json           # Aggregated user/topic interaction stats
-│
-├── agents/                        # Persona configuration and logic
-│   ├── personality_config.json    # Persona definitions (tone, thresholds, etc.)
-│   ├── profiles/                  # Per-agent behavioral rules / extensions
-│   │   └── maya.json              # Example override config
-│   └── loader.py                  # Loads agents and temperature logic
-│
-├── echo/                          # Echo generation system
-│   ├── builder.py                 # Extracts echo corpus from chat logs
-│   ├── traits_extractor.py        # Analyzes tone, behavior, values
-│   ├── echo_prompt.py             # Creates echo-mode prompts for LLM
-│   └── data/                      # Structured training data
-│       └── user_123/              # Logs and extracted traits
-│           ├── logs.jsonl
-│           ├── facts.json
-│           ├── traits.json
-│           └── sessions/
-│               └── session_2024_01.json
-│
-├── tools/                         # Agent-accessible external tools
-│   ├── image_gen.py               # Stable Diffusion image interface
-│   ├── sandbox_env.py             # Sandboxed chroot environment (file/web)
-│   ├── web_research.py            # Web search & document summarizer
-│   └── tool_registry.py           # Tool definitions and input/output schemas
-│
-├── interface/                     # User interfaces
-│   ├── cli_chat.py                # Terminal interface
-│   ├── api/                       # REST or WebSocket server
-│   │   └── routes.py
-│   ├── web/                       # Optional web-based UI
-│   └── discord/                   # Optional Discord chatbot interface
-│
-├── config/                        # Environment and runtime config
-│   ├── .env                       # Environment variables
-│   └── settings.yaml              # (Optional) Central override config
-│
-├── analytics/                     # (Optional) Memory + metadata visualizations
-│   ├── graph_dashboard.ipynb      # View Neo4j topics and entity graphs
-│   ├── metadata_timeline.ipynb    # Plot emotional arc over time
-│   └── memory_report.py           # Exports memory snapshots per user
-│
-├── scripts/                       # Init and admin tools
-│   ├── init_postgres.py
-│   ├── init_qdrant.py
-│   ├── init_neo4j.py
-│   ├── init_structure.sh
-│   └── migrate_logs_to_echo.py    # Convert chat logs into echo-ready format
-│
-├── data/                          # Local data + storage
-│   ├── logs/                      # Raw conversation logs
-│   ├── backups/                   # Database dumps
-│   └── echo_corpus/               # (Deprecated; now in echo/data/)
-│
-├── tests/                         # Unit and integration tests
-│   └── test_memory_flow.py
-│
-├── requirements.txt
+AI-persona-framework/
+├── LLM-client/                        # Core persona engine and orchestration logic
+│   ├── agents/                        # Agent configs and personality logic
+│   │   ├── loader.py                  # Main agent loader interface
+│   │   ├── personality_config.json    # Global agent defaults
+│   │   ├── loaders/                   # Personality + agent sub-loaders
+│   │   │   ├── agent_loader.py        # Loads agent metadata
+│   │   │   └── personality_loader.py  # Loads JSON personality definitions
+│   │   └── system_personas/          # Built-in example personas
+│   │       ├── arthur.json
+│   │       ├── maya.json
+│   │       ├── rufus.json
+│   │       └── personality_config.json
+│   ├── config/                        # Environment-specific setup
+│   │   ├── .env                       # Local environment overrides
+│   │   └── env.template               # Sample config template
+│   ├── core/                          # Central processing and orchestration
+│   │   ├── engine.py                  # Main controller (input → memory → output)
+│   │   ├── context_builder.py         # Builds final prompt from memory layers
+│   │   ├── router.py                  # Routes tools, memory, agents dynamically
+│   │   └── echo_controller.py         # (Future) Handles echo persona invocation
+│   ├── interface/                     # User interfaces
+│   │   ├── cli_chat.py                # Terminal interface
+│   │   ├── api/routes.py              # API routes for external access
+│   │   ├── web/                       # Optional: browser front-end
+│   │   └── discord/                   # Optional: Discord chatbot interface
+│   └── tests/                         # Unit tests for LLM-client
+│       ├── test_engine.py
+│       ├── test_loader.py
+│       ├── test_agent_loader.py
+│       ├── test_llm_client.py
+│       └── test_personality_loader.py
+
+├── memory-server/                    # Server-side memory logic
+│   ├── memory/                        # Memory backend logic
+│   │   ├── buffer.py                  # In-memory short-term buffer
+│   │   ├── vector_store.py            # Qdrant-based semantic memory
+│   │   ├── fact_store.py              # PostgreSQL facts + journal memory
+│   │   ├── topic_graph.py             # Neo4j topic/emotion relationship graph
+│   │   ├── metadata.py                # Metadata tagging per message
+│   │   └── summarizer.py              # (Planned) Session summarization & decay
+│   ├── echo/                          # Echo generation (simulated personalities)
+│   │   ├── builder.py                 # Extracts echo corpuses from logs
+│   │   ├── echo_prompt.py             # Prompt constructor for echo-mode
+│   │   ├── traits_extractor.py        # Extracts traits from logs
+│   │   └── data/user_123/             # Sample extracted echo data
+│   │       ├── facts.json
+│   │       ├── logs.json1
+│   │       ├── traits.json
+│   │       └── sessions/
+│   │           └── session_2025_05.json
+│   ├── analytics/                     # Visualization & analysis
+│   │   ├── graph_dashboard.ipynb      # Explore Neo4j topic graphs
+│   │   ├── memory_report.py           # Print/Export user memory
+│   │   └── metadata_timeline.ipynb    # Visualize emotion/topics over time
+│   ├── scripts/                       # Setup and migration
+│   │   ├── init_postgres.py           # Create PostgreSQL schema
+│   │   ├── init_qdrant.py             # Create/reset Qdrant collections
+│   │   ├── init_neo4j.py              # Set up Neo4j schema
+│   │   └── migrate_logs_to_echo.py    # Import legacy logs into echo format
+│   ├── config/
+│   │   ├── .env
+│   │   ├── env.template
+│   │   └── settings.yaml
+│   └── tests/                         # Memory unit/integration tests
+│       ├── test_vector_store.py
+│       ├── test_fact_store.py
+│       ├── test_topic_graph.py
+│       ├── test_chat_store.py
+│       ├── test_init_postgres.py
+│       ├── test_init_neo4j.py
+│       └── test_init_qdrant.py
+├── shared/                            # Shared utilities across components
+│   ├── config/
+│   │   ├── .env
+│   │   └── emotions.yaml              # Default emotions schema
+│   ├── tools/                         # Tool logic available to all agents
+│   │   ├── image_gen.py               # Interface for image generation
+│   │   ├── sandbox_env.py             # Sandboxed CLI execution
+│   │   ├── web_research.py            # Web search/summarization tool
+│   │   └── tool_registry.py           # Registers tool capabilities for agents
+│   ├── scripts/
+│   │   ├── agent_creator.py           # Script to add/update agents
+│   │   └── agent_creator_with_emotions.py # Adds emotional defaults
+│   └── tests/
+│       ├── test_agent_creator.py
+│       └── test_agent_creator_with_emotions.py
+
+├── doc/                               # System design and documentation
+│   ├── echo.md
+│   ├── memory.md
+│   ├── flowchart.txt
+│   └── system_architecture.png
+
+├── temp/                              # Temporary or dev scripts
+│   ├── del_qdrant.py
+│   ├── requirements_bloated.txt       # Full CUDA-enabled dependencies
+│   └── requirements2.txt              # Alternative/test config
+
+├── data/                              # (optional) Logs, backups, exports
+│   ├── logs/                          # Raw chat logs (not yet in echo/)
+│   └── backups/                       # Database dumps and snapshots
+
+├── test_all_python_code.py           # Test runner for all unit tests
+├── check_for_unittests.py            # Checks if all modules are covered by tests
 ├── README.md
 ├── CONTRIBUTING.md
+├── CHANGELOG.md
 └── LICENSE
 ```
 
