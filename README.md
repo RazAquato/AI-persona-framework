@@ -3,7 +3,7 @@
 # AI Persona Framework
 Modular LLM assistant with memory, tools and persona simulation
 
-**Author:** Kenneth  
+**Author:** Kenneth Haider
 **License**: [GNU General Public License v3.0 (GPLv3)](https://www.gnu.org/licenses/gpl-3.0.en.html)
 
 ---
