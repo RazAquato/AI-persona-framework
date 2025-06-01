@@ -6,6 +6,9 @@ __pycache__/
 # LLAMA
 llama.cpp/
 
+# TEMP
+temp/
+
 # Virtual environment
 venv/
 env/
