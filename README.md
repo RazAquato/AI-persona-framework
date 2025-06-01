@@ -197,3 +197,4 @@ LLM prompting, vector memory, topic tagging, and persona switching are being bui
 Stable Diffusion + sandbox tools planned next.
 
 Pull requests, ideas, and contributors are welcome — local-first AI should be **ours**, not theirs.
+
