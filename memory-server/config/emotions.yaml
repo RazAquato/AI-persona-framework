@@ -1,0 +1,19 @@
+emotions:
+  love: float
+  trust: float
+  joy: float
+  calm: float
+  pride: float
+  interest: float
+  curiosity: float
+  fear: float
+  sadness: float
+  anger: float
+  disgust: float
+  revulsion: float
+  shame: float
+  guilt: float
+  hope: float
+  jealousy: float
+  dominance: float
+  submission: float
