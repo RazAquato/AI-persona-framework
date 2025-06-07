@@ -1,5 +1,15 @@
 flowchart TD
-    A[👤 User Input] --> B[🧠 Engine]
+    
+
+API som har gitte input/outputs til de intefaces som skal snakke med den (webserver, chat-klient, discord etc)
+"hei på deg"
+"/generate_image man on a horse" <--her skal det forstås at den skal laste stable diffusion istedenfor LLM
+
+"/change_model deepseek"  <-- da skal den unloade eksisterende modell og kjøre "start_llm --model deepseek"
+"/some_command_here <-- må hardkode hvilke verkøy man har tilgang til
+
+
+    A[👤 User Input] --> [API]--> B[🧠 Engine]
     B --> B1[🧠 Short-term Buffer]
     B --> B2[🔍 Qdrant (Semantic Search)]
     B --> B3[📊 PostgreSQL (Facts, Logs)]
