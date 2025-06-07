@@ -7,7 +7,10 @@ __pycache__/
 llama.cpp/
 
 # TEMP
-#temp/
+temp/
+
+#Model training (temp)
+model-training/
 
 # Virtual environment
 venv/

@@ -1,0 +1,20 @@
+evathene:
+  path: /modeller/Evathene-v1.3/Evathene-v1.3-Q4_K_M.gguf
+  port: 8080
+  ctx_size: 8192
+  n_gpu_layers: 80
+  main_gpu: 0
+
+deepseek:
+  path: /modeller/Deepseek-v2/Deepseek-Q4_K_M.gguf
+  port: 8080
+  ctx_size: 4096
+  n_gpu_layers: 60
+  main_gpu: 0
+
+cpp_tutor:
+  path: /modeller/CppTutor-LM/CppTutor-Q4_K.gguf
+  port: 8080
+  ctx_size: 8192
+  n_gpu_layers: 90
+  main_gpu: 0
