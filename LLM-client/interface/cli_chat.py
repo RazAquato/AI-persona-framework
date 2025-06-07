@@ -14,4 +14,20 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#placeholder
+import requests
+
+persona = "maya"
+session_id = "test-user-1"
+
+while True:
+    msg = input("You: ")
+    if msg.lower() in ("exit", "quit"):
+        break
+
+    res = requests.post("http://localhost:8000/chat", json={
+        "persona": persona,
+        "session_id": session_id,
+        "message": msg
+    })
+    print(f"{persona.capitalize()}: {res.json()['response']}")
+
