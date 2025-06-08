@@ -1,0 +1,79 @@
+A. 👤 User Input
+   ↓
+A1. 🧠 Router (Input Routing & Intent Detection)
+   ├── If tool command → A2. 🛠️ Tool Handler
+   │       ├── Uses `tool_registry.py`
+   │       └── Calls tool like `image_gen.generate(prompt)`
+   │            ↓
+   │         → E. 🗣️ Response (Tool Output)   
+   └── Otherwise
+       ↓
+B. 🧠 Engine
+   ├──→ B1. 🧠 Short-term Buffer
+   ├──→ B2. 🔍 Qdrant (Semantic Search)
+   ├──→ B3. 📊 PostgreSQL (Facts, Logs)
+   ├──→ B4. 🕸️ Neo4j (Topics, Entities)
+
+       ↓
+C. 📦 Context Builder
+   └── Builds full prompt incl. memory, persona, emotional tone
+
+       ↓
+D. 🧠 LLM (Prompt + Input)
+   └── Output text + (Optional) tool triggers or suggestions
+       ↓
+D2. 🧠 Router (Post-LLM Tool Detection)
+   ├── If LLM suggests a tool →
+   │     → A2. 🛠️ Tool Handler
+   └── Otherwise →
+       ↓
+E. 🗣️ Response (Final message to user)
+
+       ↓
+F. Logging and Memory Update
+   ├──→ F1. 📝 PostgreSQL (Log + Metadata)
+   ├──→ F2. 📥 Qdrant (Embedding)
+   ├──→ F3. 📈 Neo4j (Topic graph update)
+          ↓
+G. 🧬 Echo Corpus (training base)
+
+--------explanation----------
+
+| Component                   | Description                                                                                                                                                                                                                   |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **A1: Router (pre-engine)** | Routes based on command (e.g., `/image`, `/tool`, `/persona`). Fast bypass for known commands. If no command detected, passes to engine.                                                                                      |
+| **D2: Router (post-LLM)**   | Routes based on model output. If model generates tool trigger (e.g., “call\_tool\:image\_gen”), it goes here before final response.                                                                                           |
+| **Emotion-Driven Routing**  | Could sit inside the **engine** or **router**, depending on implementation. For example: if the emotion analyzer sees the user is sad → it can inject a tool call (like image\_gen) into the flow before the LLM even speaks. |
+
+----------------------------
+TOOL-HANDLER:
+A2: Tool Handler
+This is the component that executes a specific tool function (e.g., image_gen.generate(), web_search.search(), or sandbox_env.run_code()).
+It’s triggered either by:
+A direct user command (e.g., /generate_image dog in a jetpack)
+A Router decision after LLM suggests tool usage
+
+shared/tools/image_gen.py
+shared/tools/web_research.py
+shared/tools/sandbox_env.py
+shared/tools/tool_registry.py
+So, A2 == a runtime handler that dispatches to these tool modules via tool_registry.py.
+-----call stack-----
+[router.py]
+  └── if tool is invoked:
+      └── A2: Tool Handler = tool_registry.get("image_gen") → image_gen.generate()
+----sample router.py ----
+from shared.tools.tool_registry import get_tool
+
+def handle_tool_request(command, args):
+    tool_func = get_tool(command)
+    if tool_func:
+        return tool_func(args)
+    else:
+        return f"Tool '{command}' not found."
+-----
+router.py should:
+Detect /toolname commands (e.g., /generate_image)
+Pass them to tool_registry.py
+A consistent input format (e.g., /generate_image prompt="cat with hat")
+Have a fallback that passes non-tool inputs to engine.py with some code that tells engine the tool-input failed
