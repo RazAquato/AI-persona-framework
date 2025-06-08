@@ -13,12 +13,11 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
-
 import sys
 import os
 from dotenv import load_dotenv
 
-# Set base path
+# Add memory-server to path
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Load shared .env first
@@ -29,20 +28,19 @@ load_dotenv(dotenv_path=SHARED_ENV_PATH)
 LOCAL_ENV_PATH = os.path.abspath(os.path.join(BASE_DIR, "..", "config", ".env"))
 load_dotenv(dotenv_path=LOCAL_ENV_PATH, override=True)
 
-# Add memory-server to path
 MEMORY_PATH = os.path.abspath(os.path.join(BASE_DIR, "..", "..", "memory-server"))
 sys.path.append(MEMORY_PATH)
 
-# Add LLM-client root path
+# Add LLM-client to path so we can import `core.engine`
 LLM_CLIENT_ROOT = os.path.abspath(os.path.join(BASE_DIR, ".."))
 sys.path.append(LLM_CLIENT_ROOT)
 
-# Deferred imports for core components
-from memory.chat_store import get_last_session, start_chat_session, log_chat_message, get_chat_messages
-from memory.context_builder import build_context
-from core.llm_client import call_llm
-from agents.loader import load_persona_config
-from memory.vector_store import store_embedding
+
+#from memory.chat_store import get_last_session, start_chat_session, log_chat_message, get_chat_messages
+#from memory.context_builder import build_context
+#from core.llm_client import call_llm
+#from agents.loader import load_persona_config
+#from memory.vector_store import store_embedding
 
 
 def run_conversation_turn(user_id: int, user_input: str, personality_id: str = "default") -> dict:
@@ -62,8 +60,8 @@ def run_conversation_turn(user_id: int, user_input: str, personality_id: str = "
         role="user",
         content=user_input,
         embedding=embedded_input,
-        sentiment=None,
-        topics=[]
+        sentiment=None,  # Optional NLP step later
+        topics=[]  # Optional NLP step later
     )
 
     # 4. Load persona prompt
@@ -74,7 +72,7 @@ def run_conversation_turn(user_id: int, user_input: str, personality_id: str = "
     past_messages = get_chat_messages(session_id)
     messages = [{"role": "system", "content": system_prompt}]
     for msg in past_messages:
-        messages.append({"role": msg[1], "content": msg[2]})
+        messages.append({"role": msg[1], "content": msg[2]})  # role, content
 
     messages.append({"role": "user", "content": user_input})
 
@@ -100,12 +98,4 @@ def run_conversation_turn(user_id: int, user_input: str, personality_id: str = "
         "assistant_reply": assistant_reply,
         "llm_raw": response.get("raw")
     }
-
-
-def process_input(user_input: str, session_id: str = None, user_id: int = 9999, personality_id: str = "default") -> str:
-    """
-    Adapter function for router. Runs one LLM turn and returns assistant reply.
-    """
-    result = run_conversation_turn(user_id=user_id, user_input=user_input, personality_id=personality_id)
-    return result["assistant_reply"]
 
