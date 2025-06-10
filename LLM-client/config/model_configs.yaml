@@ -18,3 +18,10 @@ cpp_tutor:
   ctx_size: 8192
   n_gpu_layers: 90
   main_gpu: 0
+
+tinyllama:
+  path: /modeller/TinyLlama/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf
+  port: 8080
+  ctx_size: 2048
+  n_gpu_layers: 999
+  main_gpu: 0

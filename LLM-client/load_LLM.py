@@ -29,9 +29,9 @@ args = parser.parse_args()
 
 conf = configs.get(args.model)
 if not conf:
-    print(f"Model '{args.model}' not found, using default 'evathene'")
-    args.model = "evathene"
-    conf = configs["evathene"]
+    print(f"Model '{args.model}' not found, using default 'tinyllama'")
+    args.model = "tinyllama"
+    conf = configs["tinyllama"]
 
 cmd = [
     os.path.join(LLAMA_PATH, "build", "bin", "llama-server"),
