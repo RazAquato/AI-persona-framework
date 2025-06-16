@@ -18,31 +18,32 @@ import sys
 import os
 from dotenv import load_dotenv
 
-# Set base path
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-# Load shared .env first
-SHARED_ENV_PATH = os.path.abspath(os.path.join(BASE_DIR, "..", "..", "shared", "config", ".env"))
-load_dotenv(dotenv_path=SHARED_ENV_PATH)
-
-# Load local .env (override shared values if needed)
-LOCAL_ENV_PATH = os.path.abspath(os.path.join(BASE_DIR, "..", "config", ".env"))
-load_dotenv(dotenv_path=LOCAL_ENV_PATH, override=True)
-
 # Add memory-server to path
-MEMORY_PATH = os.path.abspath(os.path.join(BASE_DIR, "..", "..", "memory-server"))
-sys.path.append(MEMORY_PATH)
 
-# Add LLM-client root path
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 LLM_CLIENT_ROOT = os.path.abspath(os.path.join(BASE_DIR, ".."))
 sys.path.append(LLM_CLIENT_ROOT)
+MEMORY_PATH = os.path.abspath(os.path.join(BASE_DIR, "..", "..", "memory-server"))
+SHARED_PATH = os.path.abspath(os.path.join(BASE_DIR, "..", "..", "shared"))
+sys.path.append(MEMORY_PATH)
+sys.path.append(SHARED_PATH)
 
-# Deferred imports for core components
+# Load .env configs
+SHARED_ENV = os.path.abspath(os.path.join(BASE_DIR, "..", "..", "shared", "config", ".env"))
+LOCAL_ENV = os.path.abspath(os.path.join(BASE_DIR, "..", "config", ".env"))
+load_dotenv(dotenv_path=SHARED_ENV)
+load_dotenv(dotenv_path=LOCAL_ENV, override=True)
+
+# Paths and imports
+sys.path.append(os.path.abspath(os.path.join(BASE_DIR, "..")))
 from memory.chat_store import get_last_session, start_chat_session, log_chat_message, get_chat_messages
 from memory.context_builder import build_context
 from core.llm_client import call_llm
 from agents.loader import load_persona_config
 from memory.vector_store import store_embedding
+from memory.emotion_store import store_emotion_vector
+from analysis.emotion_handler import EmotionVectorGenerator
+
 
 
 def run_conversation_turn(user_id: int, user_input: str, personality_id: str = "default") -> dict:
@@ -55,8 +56,13 @@ def run_conversation_turn(user_id: int, user_input: str, personality_id: str = "
     context = build_context(user_id, user_input)
     embedded_input = context["embedded_input"]
 
-    # 3. Store user message + embedding
-    log_chat_message(
+    # 3. Analyze emotion
+    emotion_gen = EmotionVectorGenerator()
+    emotion_vector = emotion_gen.analyze(user_input)
+    emotion_tone = max(emotion_vector, key=emotion_vector.get, default="neutral")
+
+    # 4. Store user message
+    message_id = log_chat_message(
         session_id=session_id,
         user_id=user_id,
         role="user",
@@ -66,23 +72,26 @@ def run_conversation_turn(user_id: int, user_input: str, personality_id: str = "
         topics=[]
     )
 
-    # 4. Load persona prompt
+    # 5. Store emotion vector in metadata
+    store_emotion_vector(message_id, emotion_vector, tone=emotion_tone)
+
+    # 6. Load persona and prompt
     persona = load_persona_config(personality_id)
     system_prompt = persona.get("system_prompt", "You are a helpful assistant.")
 
-    # 5. Load chat history
+    # 7. Load chat history
     past_messages = get_chat_messages(session_id)
     messages = [{"role": "system", "content": system_prompt}]
     for msg in past_messages:
-        messages.append({"role": msg[1], "content": msg[2]})
+        messages.append({"role": msg[1], "content": msg[2]})  # role, content
 
     messages.append({"role": "user", "content": user_input})
 
-    # 6. Call LLM
+    # 8. Call LLM
     response = call_llm(messages)
-
-    # 7. Store assistant response
     assistant_reply = response["content"]
+
+    # 9. Store assistant message (no emotion tagging for now)
     log_chat_message(
         session_id=session_id,
         user_id=user_id,
@@ -93,7 +102,7 @@ def run_conversation_turn(user_id: int, user_input: str, personality_id: str = "
         topics=[]
     )
 
-    # 8. Return full response
+    # 10. Return response
     return {
         "session_id": session_id,
         "user_input": user_input,
@@ -101,11 +110,9 @@ def run_conversation_turn(user_id: int, user_input: str, personality_id: str = "
         "llm_raw": response.get("raw")
     }
 
-
-def process_input(user_input: str, session_id: str = None, user_id: int = 9999, personality_id: str = "default") -> str:
+def process_input(user_input: str, session_id: str = None, user_id: int = 9999) -> str:
     """
-    Adapter function for router. Runs one LLM turn and returns assistant reply.
+    Wrapper for router integration. Looks like 'engine.process_input'.
     """
-    result = run_conversation_turn(user_id=user_id, user_input=user_input, personality_id=personality_id)
-    return result["assistant_reply"]
-
+    result = run_conversation_turn(user_id=user_id, user_input=user_input)
+    return result.get("assistant_reply", "[No reply generated]")
