@@ -8,11 +8,11 @@
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+# along with this program. If not, see <https://www.gnu.org/licenses/>
 
 import psycopg2
 import os
@@ -20,7 +20,6 @@ from dotenv import load_dotenv
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ENV_PATH = os.path.join(BASE_DIR, "..", "config", ".env")
-
 load_dotenv(dotenv_path=os.path.abspath(ENV_PATH))
 
 conn = psycopg2.connect(
@@ -34,7 +33,7 @@ cur = conn.cursor()
 
 cur.execute("CREATE EXTENSION IF NOT EXISTS vector;")
 
-# Users table
+# Users
 cur.execute("""
 CREATE TABLE users (
     id SERIAL PRIMARY KEY,
@@ -45,7 +44,7 @@ CREATE TABLE users (
 );
 """)
 
-# User-defined AI personalities
+# AI Personalities
 cur.execute("""
 CREATE TABLE user_personalities (
     id SERIAL PRIMARY KEY,
@@ -58,7 +57,7 @@ CREATE TABLE user_personalities (
 );
 """)
 
-# Chat sessions
+# Chat Sessions
 cur.execute("""
 CREATE TABLE chat_sessions (
     id SERIAL PRIMARY KEY,
@@ -69,7 +68,7 @@ CREATE TABLE chat_sessions (
 );
 """)
 
-# Chat messages
+# Chat Messages
 cur.execute("""
 CREATE TABLE chat_messages (
     id SERIAL PRIMARY KEY,
@@ -84,33 +83,10 @@ CREATE TABLE chat_messages (
 );
 """)
 
-# Facts table
-cur.execute("""
-CREATE TABLE facts (
-    id SERIAL PRIMARY KEY,
-    user_id INT REFERENCES users(id),
-    text TEXT,
-    source_chat_id INT REFERENCES chat_messages(id),
-    relevance_score FLOAT,
-    tags TEXT[]
-);
-""")
-
-# Topic tags
-cur.execute("""
-CREATE TABLE topic_tags (
-    session_id INT REFERENCES chat_sessions(id),
-    topic TEXT,
-    confidence FLOAT,
-    sentiment FLOAT
-);
-""")
-
-# Message metadata with JSONB emotion field
+# Message Metadata (1:1 with chat_messages)
 cur.execute("""
 CREATE TABLE message_metadata (
-    id SERIAL PRIMARY KEY,
-    message_id INT REFERENCES chat_messages(id) ON DELETE CASCADE,
+    message_id INT PRIMARY KEY REFERENCES chat_messages(id) ON DELETE CASCADE,
 
     -- Memory & context metadata
     was_buffered BOOLEAN,
@@ -131,7 +107,29 @@ CREATE TABLE message_metadata (
 );
 """)
 
-# Emotional relationship model (user → target)
+# Facts
+cur.execute("""
+CREATE TABLE facts (
+    id SERIAL PRIMARY KEY,
+    user_id INT REFERENCES users(id),
+    text TEXT,
+    source_chat_id INT REFERENCES chat_messages(id),
+    relevance_score FLOAT,
+    tags TEXT[]
+);
+""")
+
+# Topic Tags
+cur.execute("""
+CREATE TABLE topic_tags (
+    session_id INT REFERENCES chat_sessions(id),
+    topic TEXT,
+    confidence FLOAT,
+    sentiment FLOAT
+);
+""")
+
+# Emotional Relationships
 cur.execute("""
 CREATE TABLE emotional_relationships (
     id SERIAL PRIMARY KEY,
@@ -146,5 +144,5 @@ CREATE TABLE emotional_relationships (
 conn.commit()
 cur.close()
 conn.close()
-print("PostgreSQL schema created with user-defined AI personalities and emotion model.")
 
+print("✅ PostgreSQL schema created with emotion tracking and 1:1 metadata linkage.")
