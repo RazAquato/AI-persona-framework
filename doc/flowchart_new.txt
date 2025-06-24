@@ -16,7 +16,7 @@ B. 🧠 Engine
 
        ↓
 C. 📦 Context Builder
-   └── Builds full prompt incl. memory, persona, emotional tone
+   └── Builds full prompt incl. memory, persona, emotional tone (analysis/emotion_handler)
 
        ↓
 D. 🧠 LLM (Prompt + Input)
@@ -27,6 +27,9 @@ D2. 🧠 Router (Post-LLM Tool Detection)
    │     → A2. 🛠️ Tool Handler
    └── Otherwise →
        ↓
+      AND → Send answer to databases through Engine
+       ↓
+
 E. 🗣️ Response (Final message to user)
 
        ↓
