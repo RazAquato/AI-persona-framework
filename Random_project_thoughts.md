@@ -1,3 +1,40 @@
+Alternatively the model could be run in a chrooted enviroment with option to create code and train
+For example tools like
+/write_file path="..." content="...
+/exec_python code="..."
+/restart_component name="engine"
+/install_package name="pandas"
+/schema_change db="pg" sql="ALTER TABLE facts ADD COLUMN confidence FLOAT;"
+/shell "shell command"
+
+For the model to be able to "think without input" we could also run a scheduler or background service that lets the LLM
+re-analyze logs and metadata
+self-reflect or propose schema changes
+decide what tools/personas to update
+propose patch diffs to its own codebase
+code like "self_reflect_and_optimize()"
+
+important: we should log any tool usage and file edits (toolname, input, return) so the agent can self-correct if it creates faulty code
+maybe even one LLM could use another LLM to perform coding for it
+/initiate LLM="deepseek coder R1", prompt="..."
+
+---
+Self-tuning a GGUF
+Even though a GGUF model is read-only and cannot fine-tune itself:
+
+It can still call external tools (like file editors, DB schema updaters, even code compilers)
+It can reflect on logs, change its prompts, generate new personas, spawn helper agents
+It can build complex feedback loops and simulate learning without changing weights
+Essentially, it becomes a powerful orchestrator and planner, even without modifying itself internally.
+
+store trained adapter checkpoints in models/adapters
+
+Optional: Hybrid Mode (GGUF + Training Tools)
+Something like: 
+/train_adapter --base Evathene --dataset /echo_corpus/user_9999.json --output /models/evathene_v2.adapter
+
+
+---
 when memory system is operational, we could expand with voice
 F.ex RVC v2, a retrieval-Based Voice Conversion v2 is a system that lets you:
 - Clone a voice using ~10 minutes of audio
