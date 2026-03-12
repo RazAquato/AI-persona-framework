@@ -36,3 +36,11 @@ tinyllama:
   ctx_size: 2048
   n_gpu_layers: 999
   main_gpu: 0
+
+qwen9b:
+  path: /modeller/Qwen3.5-9B-HauhauCS/Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q8_0.gguf
+  port: 8080
+  ctx_size: 8192
+  n_gpu_layers: 999
+  main_gpu: 0
+  persona: eva
