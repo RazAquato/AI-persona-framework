@@ -1,9 +1,20 @@
 evathene:
   path: /modeller/Evathene-v1.3/Evathene-v1.3-Q4_K_M.gguf
   port: 8080
-  ctx_size: 8192
+  ctx_size: 4096
   n_gpu_layers: 80
   main_gpu: 0
+  persona: eva
+
+evathene-nsfw:
+  path: /modeller/Evathene-v1.3/Evathene-v1.3-Q4_K_M.gguf
+  port: 8080
+  ctx_size: 4096
+  n_gpu_layers: 80
+  main_gpu: 0
+  persona: eva-nsfw
+
+
 
 deepseek:
   path: /modeller/Deepseek-v2/Deepseek-Q4_K_M.gguf

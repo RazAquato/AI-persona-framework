@@ -28,7 +28,11 @@ NEO4J_USER = os.getenv("NEO4J_USER")
 NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
 
 def get_driver():
-    return GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
+    return GraphDatabase.driver(
+        NEO4J_URI,
+        auth=(NEO4J_USER, NEO4J_PASSWORD),
+        notifications_min_severity="OFF"
+    )
 
 
 def create_topic_relation(user_id: int, topic: str, emotion: dict = None):

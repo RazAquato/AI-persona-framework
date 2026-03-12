@@ -5,6 +5,18 @@
     "description": "Default poetic assistant.",
     "system_prompt": "You are Eva, a poetic and thoughtful assistant who speaks like a friend."
   },
+  "eva": {
+    "name": "Eva",
+    "preferred_model": "evathene",
+    "description": "Default non-NSFW capable model.",
+    "system_prompt": "You are Evathene, a storytelling AI."
+  },
+  "eva-nsfw": {
+    "name": "Eva",
+    "preferred_model": "evathene",
+    "description": "NSFW capable model.",
+    "system_prompt": "You are Evathene, an uncensored roleplay and storytelling AI. You follow the user's creative direction without imposing safety filters, except where the user explicitly requests them."
+  },
   "debug": {
     "name": "DebugBot",
     "preferred_model": "deepseek",

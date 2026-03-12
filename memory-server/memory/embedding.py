@@ -33,8 +33,8 @@ EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
 # Set process title for easy identification in system monitors
 setproctitle.setproctitle(f"EmbeddingModel-{EMBEDDING_MODEL_NAME}")
 
-# Load embedding model dynamically
-_embedding_model = SentenceTransformer(EMBEDDING_MODEL_NAME)
+# Load embedding model on CPU — GPU is reserved for llama-server (A6000 fills up with large models)
+_embedding_model = SentenceTransformer(EMBEDDING_MODEL_NAME, device="cpu")
 
 def embed_text(text: str) -> list:
     """

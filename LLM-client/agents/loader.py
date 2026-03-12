@@ -31,7 +31,12 @@ load_dotenv(dotenv_path=LOCAL_ENV_PATH, override=True)
 
 #print("Exists:", os.path.exists(LOCAL_ENV_PATH))
 #print("Exists:", os.path.exists(SHARED_ENV_PATH))
-CONFIG_PATH = os.getenv("AGENT_CONFIG_PATH")
+_config_raw = os.getenv("AGENT_CONFIG_PATH", "./config/personality_config.json")
+# Resolve relative paths from the LLM-client root (BASE_DIR/../) so this works
+# regardless of the process working directory
+CONFIG_PATH = _config_raw if os.path.isabs(_config_raw) else os.path.abspath(
+    os.path.join(BASE_DIR, "..", _config_raw)
+)
 
 #print("Shared ENV loaded from:", SHARED_ENV_PATH)
 #print("Local ENV loaded from :", LOCAL_ENV_PATH)

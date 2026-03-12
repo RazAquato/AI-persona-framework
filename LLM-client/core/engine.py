@@ -79,8 +79,9 @@ def run_conversation_turn(user_id: int, user_input: str, personality_id: str = "
     persona = load_persona_config(personality_id)
     system_prompt = persona.get("system_prompt", "You are a helpful assistant.")
 
-    # 7. Load chat history
-    past_messages = get_chat_messages(session_id)
+    # 7. Load chat history (capped to CHAT_BUFFER_LIMIT to avoid OOM on large models)
+    buffer_limit = int(os.getenv("CHAT_BUFFER_LIMIT", 6))
+    past_messages = get_chat_messages(session_id)[-buffer_limit:]
     messages = [{"role": "system", "content": system_prompt}]
     for msg in past_messages:
         messages.append({"role": msg[1], "content": msg[2]})  # role, content
