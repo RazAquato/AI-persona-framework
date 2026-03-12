@@ -19,13 +19,15 @@ Conversation Engine
 -------------------
 Orchestrates a full conversation turn:
 1. Session management
-2. Build memory context (facts, vectors, topics)
+2. Build memory context (facts, vectors, topics) with tier filtering
 3. Analyze user emotions
 4. Load + update persona emotion state
 5. Assemble prompt via prompt_builder
 6. Call LLM
 7. Persist everything (chat, embeddings, emotions)
-8. Update buffer
+8. Extract knowledge (facts, entities, topics) from both user input and reply
+9. Populate Neo4j topic graph
+10. Update buffer
 """
 
 import sys
@@ -54,16 +56,20 @@ from memory.context_builder import build_context
 from memory.vector_store import store_embedding
 from memory.emotion_store import store_emotion_vector
 from memory.persona_emotion_store import load_persona_emotion, save_persona_emotion
+from memory.fact_store import store_fact
+from memory.topic_graph import create_topic_relation, link_all_topics, create_entity, link_entity_to_topic
 from memory.buffer import conversation_buffer
 from core.llm_client import call_llm
 from core.prompt_builder import build_system_prompt, build_message_list
 from agents.loader import load_persona_config
 from analysis.emotion_handler import EmotionVectorGenerator, PersonaEmotionEngine
+from analysis.knowledge_extractor import KnowledgeExtractor
 
 
 # Module-level singletons
 _emotion_gen = EmotionVectorGenerator()
 _persona_engine = PersonaEmotionEngine()
+_knowledge_extractor = KnowledgeExtractor()
 
 
 def run_conversation_turn(
@@ -82,7 +88,8 @@ def run_conversation_turn(
         session_id: optional existing session ID (will create/resume if None)
 
     Returns:
-        dict with keys: session_id, user_input, assistant_reply, persona_emotions, user_emotions, llm_raw
+        dict with keys: session_id, user_input, assistant_reply, persona_emotions,
+                        user_emotions, emotion_description, extracted_knowledge, llm_raw
     """
 
     # 1. Session management
@@ -91,15 +98,19 @@ def run_conversation_turn(
     if session_id is None:
         session_id = start_chat_session(user_id, personality_id)
 
-    # 2. Build memory context (facts, vector matches, topic graph)
-    context = build_context(user_id, user_input)
+    # 2. Load persona config (needed for memory_scope)
+    persona = load_persona_config(personality_id)
+    memory_scope = persona.get("memory_scope", None)
+
+    # 3. Build memory context with tier filtering
+    context = build_context(user_id, user_input, memory_scope=memory_scope)
     embedded_input = context["embedded_input"]
 
-    # 3. Analyze user emotions
+    # 4. Analyze user emotions
     user_emotions = _emotion_gen.analyze(user_input)
     user_emotion_tone = max(user_emotions, key=user_emotions.get, default="neutral")
 
-    # 4. Load persona emotion state and update it
+    # 5. Load persona emotion state and update it
     persona_state = load_persona_emotion(user_id, personality_id)
     current_persona_emotions = persona_state["emotions"]
     last_interaction = persona_state["last_updated"]
@@ -114,9 +125,6 @@ def run_conversation_turn(
     # Generate natural-language emotion description for the prompt
     emotion_description = _persona_engine.describe_emotional_state(new_persona_emotions)
 
-    # 5. Load persona config
-    persona = load_persona_config(personality_id)
-
     # 6. Assemble system prompt with all context
     system_prompt = build_system_prompt(
         persona=persona,
@@ -130,7 +138,6 @@ def run_conversation_turn(
     buffer_limit = int(os.getenv("CHAT_BUFFER_LIMIT", 10))
     buffer_msgs = conversation_buffer.get_messages(user_id, session_id, limit=buffer_limit)
 
-    # If buffer is empty (first turn or restart), fall back to DB history
     if not buffer_msgs:
         db_history = get_chat_messages(session_id)[-buffer_limit:]
     else:
@@ -187,11 +194,51 @@ def run_conversation_turn(
     # 14. Save updated persona emotions
     save_persona_emotion(user_id, personality_id, new_persona_emotions)
 
-    # 15. Update conversation buffer
+    # 15. Knowledge extraction — extract from user input
+    extracted = _knowledge_extractor.extract_all(user_input, role="user")
+
+    # 15a. Store extracted facts
+    for fact in extracted["facts"]:
+        store_fact(
+            user_id=user_id,
+            fact=fact["text"],
+            tags=fact.get("tags", []),
+            relevance_score=fact.get("confidence", 0.5),
+            source_type="conversation",
+            source_ref=str(message_id),
+            tier=fact.get("tier", "knowledge"),
+            entity_type=fact.get("entity_type"),
+        )
+
+    # 15b. Store extracted entities as facts AND in Neo4j
+    for entity in extracted["entities"]:
+        store_fact(
+            user_id=user_id,
+            fact=entity["text"],
+            tags=entity.get("tags", []),
+            relevance_score=entity.get("confidence", 0.5),
+            source_type="conversation",
+            source_ref=str(message_id),
+            tier=entity.get("tier", "knowledge"),
+            entity_type=entity.get("entity_type"),
+        )
+        # Extract entity name from the fact text for Neo4j
+        _store_entity_in_graph(user_id, entity)
+
+    # 15c. Populate topic graph
+    topic_names = [t["topic"] for t in extracted["topics"]]
+    for topic_info in extracted["topics"]:
+        create_topic_relation(user_id, topic_info["topic"])
+
+    # 15d. Cross-link topics that appeared in the same message
+    if len(topic_names) >= 2:
+        link_all_topics(topic_names)
+
+    # 16. Update conversation buffer
     conversation_buffer.add_message(user_id, session_id, "user", user_input)
     conversation_buffer.add_message(user_id, session_id, "assistant", assistant_reply)
 
-    # 16. Return full result
+    # 17. Return full result
     return {
         "session_id": session_id,
         "user_input": user_input,
@@ -199,8 +246,30 @@ def run_conversation_turn(
         "persona_emotions": new_persona_emotions,
         "user_emotions": user_emotions,
         "emotion_description": emotion_description,
+        "extracted_knowledge": extracted,
         "llm_raw": response.get("raw"),
     }
+
+
+def _store_entity_in_graph(user_id: int, entity: dict):
+    """Helper to store an extracted entity in Neo4j."""
+    entity_type = entity.get("entity_type")
+    text = entity.get("text", "")
+
+    # Try to extract the entity name from the fact text
+    # Pattern: "User has a pet named X" or "User's wife is named X"
+    import re
+    name_match = re.search(r"named (\w+)", text)
+    if name_match:
+        entity_name = name_match.group(1)
+        create_entity(user_id, entity_name, entity_type or "thing")
+    elif entity_type:
+        # Use first capitalized word as entity name fallback
+        words = text.split()
+        for w in reversed(words):
+            if w[0].isupper() and len(w) > 1:
+                create_entity(user_id, w, entity_type)
+                break
 
 
 def process_input(user_input: str, session_id: str = None, user_id: int = 9999,

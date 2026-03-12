@@ -56,6 +56,57 @@ class TestPersonaLoader(unittest.TestCase):
         self.assertEqual(result["name"], "Fallback")
         self.assertIn("helpful", result["system_prompt"])
 
+    # --- M2 additions: memory_scope ---
+
+    @patch("builtins.open", new_callable=mock_open)
+    @patch("agents.loader.CONFIG_PATH", "mock/path/personality_config.json")
+    def test_memory_scope_default_added(self, mock_file):
+        """Personas without memory_scope get default scope injected."""
+        mock_file().read.return_value = json.dumps(self.mock_config)
+        result = loader.load_persona_config("default")
+        self.assertIn("memory_scope", result)
+        self.assertTrue(result["memory_scope"]["tier1"])
+        self.assertEqual(result["memory_scope"]["tier2"], "all")
+        self.assertEqual(result["memory_scope"]["tier3"], "private")
+
+    @patch("builtins.open", new_callable=mock_open)
+    @patch("agents.loader.CONFIG_PATH", "mock/path/personality_config.json")
+    def test_memory_scope_preserved_if_present(self, mock_file):
+        """Existing memory_scope in config is preserved."""
+        config_with_scope = {
+            "debug": {
+                "name": "DebugBot",
+                "system_prompt": "Debug.",
+                "memory_scope": {"tier1": True, "tier2": ["technology"], "tier3": "private"}
+            }
+        }
+        mock_file().read.return_value = json.dumps(config_with_scope)
+        result = loader.load_persona_config("debug")
+        self.assertEqual(result["memory_scope"]["tier2"], ["technology"])
+
+    @patch("builtins.open", new_callable=mock_open)
+    @patch("agents.loader.CONFIG_PATH", "mock/path/personality_config.json")
+    def test_memory_scope_partial_filled(self, mock_file):
+        """Partial memory_scope gets missing fields filled in."""
+        config_partial = {
+            "partial": {
+                "name": "Partial",
+                "system_prompt": "Partial.",
+                "memory_scope": {"tier1": True}
+            }
+        }
+        mock_file().read.return_value = json.dumps(config_partial)
+        result = loader.load_persona_config("partial")
+        self.assertEqual(result["memory_scope"]["tier2"], "all")
+        self.assertEqual(result["memory_scope"]["tier3"], "private")
+
+    @patch("agents.loader.CONFIG_PATH", "invalid/path/config.json")
+    def test_fallback_has_memory_scope(self):
+        """Even the error fallback should have memory_scope."""
+        result = loader.load_persona_config("any")
+        self.assertIn("memory_scope", result)
+        self.assertTrue(result["memory_scope"]["tier1"])
+
 
 if __name__ == "__main__":
     unittest.main()

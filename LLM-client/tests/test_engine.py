@@ -42,6 +42,24 @@ class TestEngine(unittest.TestCase):
         )
         self.assertIn("assistant_reply", result)
 
+    @patch("core.engine.store_emotion_vector")
+    def test_result_contains_extracted_knowledge(self, mock_store_emotion):
+        """Result should include extracted_knowledge dict from M2."""
+        result = run_conversation_turn(user_id=9999, user_input="My name is Kenneth")
+        self.assertIn("extracted_knowledge", result)
+        knowledge = result["extracted_knowledge"]
+        self.assertIn("facts", knowledge)
+        self.assertIn("entities", knowledge)
+        self.assertIn("topics", knowledge)
+        self.assertIn("classification", knowledge)
+
+    @patch("core.engine.store_emotion_vector")
+    def test_knowledge_extraction_finds_identity(self, mock_store_emotion):
+        """Knowledge extractor should find identity facts in user input."""
+        result = run_conversation_turn(user_id=9999, user_input="My name is Kenneth and I live in Norway")
+        facts = result["extracted_knowledge"]["facts"]
+        self.assertTrue(any("Kenneth" in f["text"] for f in facts))
+
 
 if __name__ == "__main__":
     unittest.main()

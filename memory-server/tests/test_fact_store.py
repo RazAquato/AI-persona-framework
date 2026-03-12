@@ -23,6 +23,8 @@ from memory.fact_store import (
     store_fact,
     get_facts,
     get_facts_by_tag,
+    get_facts_by_tier,
+    get_facts_by_entity_type,
     delete_fact,
     get_top_facts,
     update_fact
@@ -66,11 +68,16 @@ class TestFactStore(unittest.TestCase):
         results = get_facts(self.test_user_id)
         self.assertTrue(any("no tags" in f[1] for f in results))
 
-    def test_store_duplicate_fact(self):
-        store_fact(self.test_user_id, "Duplicate fact", tags=["test"])
-        store_fact(self.test_user_id, "Duplicate fact", tags=["test"])
+    def test_store_duplicate_fact_is_deduped(self):
+        unique = "Dedup old test fact ZZZ"
+        # Clean up
+        for f in get_facts(self.test_user_id):
+            if f[1] == unique:
+                delete_fact(f[0])
+        store_fact(self.test_user_id, unique, tags=["test"])
+        store_fact(self.test_user_id, unique, tags=["test"])
         results = [fact[1] for fact in get_facts(self.test_user_id)]
-        self.assertEqual(results.count("Duplicate fact"), 2)
+        self.assertEqual(results.count(unique), 1, "Dedup should prevent duplicate facts")
 
     def test_get_facts_empty(self):
         self.cur.execute("INSERT INTO users (name) VALUES (%s) RETURNING id;", ("EmptyUser",))
@@ -105,7 +112,7 @@ class TestFactStore(unittest.TestCase):
 
     def test_delete_fact(self):
         store_fact(self.test_user_id, "To be deleted", tags=["temp"], relevance_score=0.5)  # FIXED
-    
+
         top_facts = get_top_facts(self.test_user_id, limit=1)
         self.assertTrue(len(top_facts) > 0, "No facts returned from get_top_facts")
 
@@ -114,6 +121,69 @@ class TestFactStore(unittest.TestCase):
 
         remaining = get_facts(self.test_user_id)
         self.assertFalse(any("To be deleted" in f[1] for f in remaining))
+
+    # --- M2 additions: tier, entity_type, dedup ---
+
+    def test_store_fact_with_tier_and_entity_type(self):
+        store_fact(
+            self.test_user_id, "User's wife is named Maria",
+            tier="identity", entity_type="person",
+            source_type="conversation", source_ref="123"
+        )
+        results = get_facts(self.test_user_id)
+        maria = [f for f in results if "Maria" in f[1]]
+        self.assertTrue(len(maria) > 0)
+        # Tuple: (id, text, tags, relevance_score, tier, entity_type)
+        self.assertEqual(maria[0][4], "identity")
+        self.assertEqual(maria[0][5], "person")
+
+    def test_get_facts_by_tier_single(self):
+        store_fact(self.test_user_id, "Identity tier fact", tier="identity")
+        store_fact(self.test_user_id, "Knowledge tier fact", tier="knowledge")
+        identity_facts = get_facts_by_tier(self.test_user_id, ["identity"])
+        self.assertTrue(all(f[4] == "identity" for f in identity_facts))
+
+    def test_get_facts_by_tier_multiple(self):
+        store_fact(self.test_user_id, "Multi-tier identity", tier="identity")
+        store_fact(self.test_user_id, "Multi-tier knowledge", tier="knowledge")
+        results = get_facts_by_tier(self.test_user_id, ["identity", "knowledge"])
+        tiers = {f[4] for f in results}
+        self.assertTrue(tiers.issubset({"identity", "knowledge"}))
+
+    def test_get_facts_by_entity_type(self):
+        store_fact(self.test_user_id, "User has pet named Rex",
+                   tier="knowledge", entity_type="pet")
+        results = get_facts_by_entity_type(self.test_user_id, "pet")
+        self.assertTrue(any("Rex" in f[1] for f in results))
+
+    def test_dedup_prevents_exact_duplicate(self):
+        unique_text = "Unique dedup test fact XYZ123"
+        # Clean up first
+        for f in get_facts(self.test_user_id):
+            if unique_text.lower() in f[1].lower():
+                delete_fact(f[0])
+        store_fact(self.test_user_id, unique_text)
+        store_fact(self.test_user_id, unique_text)  # duplicate
+        results = [f for f in get_facts(self.test_user_id) if f[1] == unique_text]
+        self.assertEqual(len(results), 1, "Dedup should prevent exact duplicate")
+
+    def test_dedup_case_insensitive(self):
+        unique_text_lower = "case insensitive dedup test abc789"
+        unique_text_upper = "Case Insensitive Dedup Test ABC789"
+        for f in get_facts(self.test_user_id):
+            if unique_text_lower in f[1].lower():
+                delete_fact(f[0])
+        store_fact(self.test_user_id, unique_text_lower)
+        store_fact(self.test_user_id, unique_text_upper)  # should be deduped
+        results = [f for f in get_facts(self.test_user_id)
+                   if f[1].lower() == unique_text_lower]
+        self.assertEqual(len(results), 1, "Dedup should be case-insensitive")
+
+    def test_get_facts_with_tier_filter(self):
+        store_fact(self.test_user_id, "Tier filter test", tier="relationship")
+        results = get_facts(self.test_user_id, tier="relationship")
+        self.assertTrue(all(f[4] == "relationship" for f in results))
+
 
 if __name__ == "__main__":
     unittest.main()

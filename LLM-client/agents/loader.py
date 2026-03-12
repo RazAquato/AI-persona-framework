@@ -42,6 +42,13 @@ CONFIG_PATH = _config_raw if os.path.isabs(_config_raw) else os.path.abspath(
 #print("Local ENV loaded from :", LOCAL_ENV_PATH)
 
 
+DEFAULT_MEMORY_SCOPE = {
+    "tier1": True,
+    "tier2": "all",
+    "tier3": "private",
+}
+
+
 def load_persona_config(personality_id: str = "default") -> dict:
     """
     Load configuration for a given personality.
@@ -50,26 +57,47 @@ def load_persona_config(personality_id: str = "default") -> dict:
         "name": "Eva",
         "description": "A poetic assistant",
         "system_prompt": "You are Eva, a poetic and thoughtful assistant...",
+        "memory_scope": {"tier1": true, "tier2": "all", "tier3": "private"},
         ...
     }
+
+    If memory_scope is missing from the config, a default scope is applied
+    (tier1 always on, tier2 all, tier3 private).
     """
     try:
         with open(CONFIG_PATH, "r") as f:
             all_configs = json.load(f)
 
         if personality_id in all_configs:
-            return all_configs[personality_id]
+            config = all_configs[personality_id]
         else:
             print(f"[loader] Personality '{personality_id}' not found. Falling back to 'default'.")
-            return all_configs.get("default", {
+            config = all_configs.get("default", {
                 "name": "Default",
                 "system_prompt": "You are a helpful assistant."
             })
 
+        return _ensure_memory_scope(config)
+
     except Exception as e:
         print(f"[loader] Error loading personality config: {e}")
-        return {
+        return _ensure_memory_scope({
             "name": "Fallback",
             "system_prompt": "You are a helpful assistant."
-        }
+        })
+
+
+def _ensure_memory_scope(config: dict) -> dict:
+    """Ensure memory_scope exists and has valid structure."""
+    if "memory_scope" not in config:
+        config["memory_scope"] = dict(DEFAULT_MEMORY_SCOPE)
+    else:
+        scope = config["memory_scope"]
+        if "tier1" not in scope:
+            scope["tier1"] = True
+        if "tier2" not in scope:
+            scope["tier2"] = "all"
+        if "tier3" not in scope:
+            scope["tier3"] = "private"
+    return config
 

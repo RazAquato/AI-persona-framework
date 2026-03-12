@@ -75,18 +75,42 @@ class TestContextBuilder(unittest.TestCase):
         self.assertIn("facts", context)
         self.assertIn("vectors", context)
         self.assertIn("topics", context)
+        self.assertIn("user_topics", context)
         self.assertIn("raw_input", context)
         self.assertIn("embedded_input", context)
 
         self.assertIsInstance(context["facts"], list)
         self.assertIsInstance(context["vectors"], list)
         self.assertIsInstance(context["topics"], list)
+        self.assertIsInstance(context["user_topics"], list)
         self.assertIsInstance(context["raw_input"], str)
         self.assertIsInstance(context["embedded_input"], list)
 
-        print("Context facts:", context["facts"])
-        print("Vector matches:", context["vectors"])
-        print("Related topics:", context["topics"])
+    def test_context_with_memory_scope_all(self):
+        """memory_scope with tier2='all' should include identity and knowledge facts."""
+        store_fact(self.user_id, "Context scope identity test", tier="identity")
+        store_fact(self.user_id, "Context scope knowledge test", tier="knowledge")
+        scope = {"tier1": True, "tier2": "all", "tier3": "private"}
+        context = build_context(self.user_id, "test input", memory_scope=scope)
+        fact_texts = [f[1] for f in context["facts"]]
+        self.assertTrue(any("identity test" in t for t in fact_texts))
+        self.assertTrue(any("knowledge test" in t for t in fact_texts))
+
+    def test_context_with_memory_scope_excludes_relationship(self):
+        """Tier 3 (relationship) facts should not appear in context."""
+        store_fact(self.user_id, "Context relationship secret", tier="relationship")
+        scope = {"tier1": True, "tier2": "all", "tier3": "private"}
+        context = build_context(self.user_id, "test input", memory_scope=scope)
+        fact_texts = [f[1] for f in context["facts"]]
+        self.assertFalse(any("relationship secret" in t for t in fact_texts))
+
+    def test_context_without_scope_returns_all(self):
+        """No memory_scope = backwards-compatible, returns all tiers."""
+        store_fact(self.user_id, "No scope all tiers", tier="relationship")
+        context = build_context(self.user_id, "test input", memory_scope=None)
+        fact_texts = [f[1] for f in context["facts"]]
+        self.assertTrue(any("No scope all tiers" in t for t in fact_texts))
+
 
 if __name__ == "__main__":
     unittest.main()
