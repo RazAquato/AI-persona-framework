@@ -60,6 +60,65 @@ class TestEngine(unittest.TestCase):
         facts = result["extracted_knowledge"]["facts"]
         self.assertTrue(any("Kenneth" in f["text"] for f in facts))
 
+    @patch("core.engine.store_emotion_vector")
+    def test_knowledge_extraction_detects_topics(self, mock_store_emotion):
+        """Topics should be detected and included in extracted_knowledge."""
+        result = run_conversation_turn(
+            user_id=9999,
+            user_input="I've been coding in python and learning machine learning"
+        )
+        topics = result["extracted_knowledge"]["topics"]
+        topic_names = [t["topic"] for t in topics]
+        self.assertIn("technology", topic_names)
+
+    @patch("core.engine.store_emotion_vector")
+    def test_knowledge_extraction_classification(self, mock_store_emotion):
+        """Message classification should be included."""
+        result = run_conversation_turn(user_id=9999, user_input="What is your name?")
+        self.assertIn("question", result["extracted_knowledge"]["classification"])
+
+    @patch("core.engine.store_emotion_vector")
+    def test_process_input_returns_string(self, mock_store_emotion):
+        """process_input wrapper should return a non-empty string."""
+        from core.engine import process_input
+        reply = process_input("Hello!", user_id=9999)
+        self.assertIsInstance(reply, str)
+        self.assertGreater(len(reply), 0)
+
+    @patch("core.engine.store_emotion_vector")
+    def test_result_contains_llm_raw(self, mock_store_emotion):
+        """Result dict should include llm_raw field."""
+        result = run_conversation_turn(user_id=9999, user_input="Hi!")
+        self.assertIn("llm_raw", result)
+
+
+class TestStoreEntityInGraph(unittest.TestCase):
+    """Test the _store_entity_in_graph helper in isolation."""
+
+    @patch("core.engine.create_entity")
+    def test_entity_with_named_pattern(self, mock_create):
+        """Entities with 'named X' in text should extract the name."""
+        from core.engine import _store_entity_in_graph
+        entity = {"text": "User has a pet named Arix", "entity_type": "pet"}
+        _store_entity_in_graph(9999, entity)
+        mock_create.assert_called_once_with(9999, "Arix", "pet")
+
+    @patch("core.engine.create_entity")
+    def test_entity_fallback_to_capitalized_word(self, mock_create):
+        """Entities without 'named X' should use last capitalized word."""
+        from core.engine import _store_entity_in_graph
+        entity = {"text": "User visited Paris", "entity_type": "place"}
+        _store_entity_in_graph(9999, entity)
+        mock_create.assert_called_once_with(9999, "Paris", "place")
+
+    @patch("core.engine.create_entity")
+    def test_entity_no_name_no_type_skipped(self, mock_create):
+        """Entity with no name match and no entity_type should not create."""
+        from core.engine import _store_entity_in_graph
+        entity = {"text": "something generic", "entity_type": None}
+        _store_entity_in_graph(9999, entity)
+        mock_create.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -163,6 +163,61 @@ class TestTopicGraph(unittest.TestCase):
             self.assertIsNotNone(record)
             self.assertGreaterEqual(record["count"], 1)
 
+    # --- Additional M2 coverage ---
+
+    def test_create_entity_with_attributes(self):
+        """create_entity with custom attributes should merge them onto the node."""
+        create_entity(self.test_user_id, "AttrDog", "pet", attributes={"breed": "labrador", "age": 5})
+        with self.driver.session() as session:
+            result = session.run("""
+                MATCH (e:Entity {name: 'AttrDog'})
+                RETURN e.breed AS breed, e.age AS age
+            """)
+            record = result.single()
+            self.assertIsNotNone(record)
+            self.assertEqual(record["breed"], "labrador")
+            self.assertEqual(record["age"], 5)
+
+    def test_create_entity_idempotent(self):
+        """Creating the same entity twice should not duplicate it."""
+        create_entity(self.test_user_id, "IdempotentDog", "pet")
+        create_entity(self.test_user_id, "IdempotentDog", "pet")
+        with self.driver.session() as session:
+            result = session.run("""
+                MATCH (e:Entity {name: 'IdempotentDog'})
+                RETURN count(e) AS cnt
+            """)
+            self.assertEqual(result.single()["cnt"], 1)
+
+    def test_link_entity_to_topic_weight_increments(self):
+        """Linking same entity to topic twice should increment count."""
+        create_entity(self.test_user_id, "WeightDog", "pet")
+        create_topic_relation(self.test_user_id, "weight_topic_test")
+        link_entity_to_topic("WeightDog", "weight_topic_test")
+        link_entity_to_topic("WeightDog", "weight_topic_test")
+        with self.driver.session() as session:
+            result = session.run("""
+                MATCH (e:Entity {name: 'WeightDog'})-[r:MENTIONED_IN]->(t:Topic {name: 'weight_topic_test'})
+                RETURN r.count AS count
+            """)
+            record = result.single()
+            self.assertIsNotNone(record)
+            self.assertGreaterEqual(record["count"], 2)
+
+    def test_link_topics_weight_increments(self):
+        """Linking the same two topics twice should increment weight."""
+        link_topics(self.topic1, self.topic2)
+        link_topics(self.topic1, self.topic2)
+        network = get_topic_network(self.topic1)
+        entry = next((r for r in network if r["related_topic"] == self.topic2), None)
+        self.assertIsNotNone(entry)
+        self.assertGreaterEqual(entry["weight"], 2)
+
+    def test_get_user_topics_empty(self):
+        """Querying topics for a non-existent user should return empty list."""
+        topics = get_user_topics("nonexistent_user_xyz", limit=10)
+        self.assertEqual(topics, [])
+
     @classmethod
     def tearDownClass(cls):
         with cls.driver.session() as session:
@@ -173,8 +228,8 @@ class TestTopicGraph(unittest.TestCase):
                 "t3": cls.topic3
             })
             # Clean up M2 test data
-            session.run("MATCH (t:Topic) WHERE t.name IN ['minimal_topic', 'pets_topic_test'] DETACH DELETE t")
-            session.run("MATCH (e:Entity) WHERE e.name IN ['TestDog', 'TestPerson', 'TestPlace', 'EntityTopicDog'] DETACH DELETE e")
+            session.run("MATCH (t:Topic) WHERE t.name IN ['minimal_topic', 'pets_topic_test', 'weight_topic_test'] DETACH DELETE t")
+            session.run("MATCH (e:Entity) WHERE e.name IN ['TestDog', 'TestPerson', 'TestPlace', 'EntityTopicDog', 'AttrDog', 'IdempotentDog', 'WeightDog'] DETACH DELETE e")
         cls.driver.close()
 
 

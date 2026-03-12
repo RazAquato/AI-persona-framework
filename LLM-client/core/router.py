@@ -66,8 +66,17 @@ def handle_user_input(user_input: str, session_id: str = None):
                 result = tool_func(prompt)
                 if isinstance(result, str):
                     return result
-                elif isinstance(result, dict) and "output" in result:
-                    return result["output"]
+                elif isinstance(result, dict):
+                    if "output" in result:
+                        return result["output"]
+                    elif "images" in result:
+                        if result.get("success"):
+                            imgs = ", ".join(result["images"]) if result["images"] else "no output"
+                            return f"✅ Image generated: {imgs}"
+                        else:
+                            return f"⚠️ Image generation failed: {result.get('error', 'unknown error')}"
+                    else:
+                        return f"✅ Tool executed: {result}"
                 else:
                     return "✅ Tool executed, but no readable output was returned."
             except Exception as e:

@@ -184,6 +184,62 @@ class TestFactStore(unittest.TestCase):
         results = get_facts(self.test_user_id, tier="relationship")
         self.assertTrue(all(f[4] == "relationship" for f in results))
 
+    # --- Additional M2 coverage ---
+
+    def test_store_fact_dedup_returns_none(self):
+        """Storing a duplicate fact should return None."""
+        unique = "Dedup return None test QQQ"
+        for f in get_facts(self.test_user_id):
+            if f[1] == unique:
+                delete_fact(f[0])
+        first_id = store_fact(self.test_user_id, unique)
+        self.assertIsNotNone(first_id)
+        second_id = store_fact(self.test_user_id, unique)
+        self.assertIsNone(second_id)
+
+    def test_update_fact_tier_and_entity_type(self):
+        """update_fact should update tier and entity_type fields."""
+        fact_id = store_fact(self.test_user_id, "Update tier test", tier="knowledge")
+        self.assertIsNotNone(fact_id)
+        update_fact(fact_id, tier="identity", entity_type="person")
+        results = get_facts(self.test_user_id)
+        updated = next((f for f in results if f[0] == fact_id), None)
+        self.assertIsNotNone(updated)
+        self.assertEqual(updated[4], "identity")
+        self.assertEqual(updated[5], "person")
+
+    def test_update_fact_no_changes_noop(self):
+        """update_fact with no arguments should not raise."""
+        fact_id = store_fact(self.test_user_id, "Noop update test")
+        self.assertIsNotNone(fact_id)
+        update_fact(fact_id)  # Should not raise
+
+    def test_get_top_facts_sort_by_id(self):
+        """get_top_facts with sort_by='id' should return most recent first."""
+        store_fact(self.test_user_id, "Sort by id old", relevance_score=0.99)
+        store_fact(self.test_user_id, "Sort by id new", relevance_score=0.01)
+        results = get_top_facts(self.test_user_id, limit=2, sort_by="id")
+        self.assertEqual(results[0][1], "Sort by id new")
+
+    def test_get_top_facts_invalid_sort_falls_back(self):
+        """Invalid sort_by should fallback to relevance_score."""
+        store_fact(self.test_user_id, "Invalid sort test", relevance_score=0.5)
+        results = get_top_facts(self.test_user_id, limit=1, sort_by="invalid")
+        self.assertIsInstance(results, list)
+
+    def test_store_fact_all_source_fields(self):
+        """Verify source_type and source_ref are accepted without error."""
+        fact_id = store_fact(
+            self.test_user_id, "Full source fields test",
+            source_type="image_analysis", source_ref="img_001"
+        )
+        self.assertIsNotNone(fact_id)
+
+    def test_get_facts_by_tier_empty_list(self):
+        """get_facts_by_tier with empty tier list should return empty."""
+        results = get_facts_by_tier(self.test_user_id, [])
+        self.assertEqual(results, [])
+
 
 if __name__ == "__main__":
     unittest.main()

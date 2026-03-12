@@ -83,11 +83,11 @@ def search_similar_vectors(query_vector: list, top_k: int = 5, filters: dict = N
             ]
         )
 
-    results = client.search(
+    results = client.query_points(
         collection_name=QDRANT_COLLECTION,
-        query_vector=query_vector,
+        query=query_vector,
         limit=top_k,
         query_filter=query_filter
     )
 
-    return results
+    return results.points

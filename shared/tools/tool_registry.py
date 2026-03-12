@@ -50,13 +50,13 @@ def list_tools():
 
 def describe_tools():
     """
-    Optionally returns a dict of tool names and descriptions.
-    For future: useful for LLM to browse tool capabilities.
+    Returns a dict of tool names and descriptions.
+    Used by LLM to understand tool capabilities.
     """
     return {
-        "generate_image": "Creates an image from a text prompt.",
-        "web_search": "Performs a web search and summarizes results.",
-        "run_code": "Executes code snippets in a sandboxed environment.",
-        # Add descriptions here
+        "generate_image": "Creates an image from a text prompt via ComfyUI. "
+                          "Accepts: prompt (str), user_id (int), user_permission (str), "
+                          "width (int), height (int), seed (int), negative_prompt (str), "
+                          "workflow (str). Returns dict with success, images, error.",
     }
 

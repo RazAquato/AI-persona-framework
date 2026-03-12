@@ -200,6 +200,133 @@ class TestKnowledgeExtractor(unittest.TestCase):
         result = self.extractor.extract_all("Hmm okay sure")
         self.assertEqual(result["facts"], [])
 
+    # --- Additional identity pattern coverage ---
+
+    def test_extract_call_me_name(self):
+        result = self.extractor.extract_all("Call me Kenny")
+        facts = result["facts"]
+        self.assertTrue(any("Kenny" in f["text"] for f in facts))
+
+    def test_extract_im_from_location(self):
+        result = self.extractor.extract_all("I'm from Oslo")
+        facts = result["facts"]
+        self.assertTrue(any("Oslo" in f["text"] for f in facts))
+        loc_fact = next(f for f in facts if "Oslo" in f["text"])
+        self.assertEqual(loc_fact["entity_type"], "place")
+
+    def test_extract_brother_name(self):
+        result = self.extractor.extract_all("My brother is named Erik")
+        facts = result["facts"]
+        self.assertTrue(any("Erik" in f["text"] for f in facts))
+
+    def test_extract_parent_name(self):
+        result = self.extractor.extract_all("My father is named Harald")
+        facts = result["facts"]
+        self.assertTrue(any("Harald" in f["text"] for f in facts))
+
+    def test_extract_has_autism(self):
+        result = self.extractor.extract_all("I have autism")
+        facts = result["facts"]
+        self.assertTrue(any("autism" in f["text"] for f in facts))
+        autism_fact = next(f for f in facts if "autism" in f["text"])
+        self.assertEqual(autism_fact["tier"], "identity")
+
+    def test_extract_age_with_my_age_is(self):
+        result = self.extractor.extract_all("My age is 40")
+        facts = result["facts"]
+        self.assertTrue(any("40" in f["text"] for f in facts))
+
+    # --- Additional entity pattern coverage ---
+
+    def test_extract_event_entity(self):
+        result = self.extractor.extract_all("During my wedding everything was perfect")
+        entities = result["entities"]
+        self.assertTrue(any("wedding" in e["text"] for e in entities))
+        event = next(e for e in entities if "wedding" in e["text"])
+        self.assertEqual(event["entity_type"], "event")
+
+    def test_extract_friend_entity(self):
+        result = self.extractor.extract_all("My friend is named Lars")
+        entities = result["entities"]
+        self.assertTrue(any("Lars" in e["text"] for e in entities))
+
+    # --- Additional preference coverage ---
+
+    def test_extract_preference_prefer_over(self):
+        result = self.extractor.extract_all("I prefer tea over coffee")
+        facts = result["facts"]
+        self.assertTrue(any("tea" in f["text"].lower() and "coffee" in f["text"].lower() for f in facts))
+
+    def test_extract_preference_into(self):
+        result = self.extractor.extract_all("I'm into photography")
+        facts = result["facts"]
+        self.assertTrue(any("photography" in f["text"].lower() for f in facts))
+
+    def test_extract_preference_interested_in(self):
+        result = self.extractor.extract_all("I'm interested in quantum computing")
+        facts = result["facts"]
+        self.assertTrue(any("quantum computing" in f["text"].lower() for f in facts))
+
+    # --- Additional classification coverage ---
+
+    def test_classify_preference(self):
+        result = self.extractor.extract_all("I love this so much")
+        self.assertIn("preference", result["classification"])
+
+    def test_classify_fact(self):
+        result = self.extractor.extract_all("I am a teacher at the local school")
+        self.assertIn("fact", result["classification"])
+
+    def test_classify_multiple(self):
+        """A message can have multiple classifications."""
+        result = self.extractor.extract_all("Do you remember when we talked about that?")
+        self.assertIn("question", result["classification"])
+        self.assertIn("memory", result["classification"])
+
+    # --- Assistant role behavior ---
+
+    def test_assistant_role_still_detects_topics(self):
+        """Topics should be detected for assistant messages too."""
+        result = self.extractor.extract_all("Let me help you with your python code", role="assistant")
+        self.assertEqual(result["facts"], [])
+        self.assertEqual(result["entities"], [])
+        topics = result["topics"]
+        topic_names = [t["topic"] for t in topics]
+        self.assertIn("technology", topic_names)
+
+    def test_assistant_role_still_classifies(self):
+        result = self.extractor.extract_all("What would you like to know?", role="assistant")
+        self.assertIn("question", result["classification"])
+
+    # --- Capitalization ---
+
+    def test_capitalize_names_in_location(self):
+        result = self.extractor.extract_all("I live in new york")
+        facts = result["facts"]
+        loc_fact = next(f for f in facts if "york" in f["text"].lower())
+        self.assertIn("New York", loc_fact["text"])
+
+    def test_capitalize_names_in_person(self):
+        result = self.extractor.extract_all("My name is kenneth")
+        facts = result["facts"]
+        name_fact = next(f for f in facts if "kenneth" in f["text"].lower())
+        self.assertIn("Kenneth", name_fact["text"])
+
+    # --- Topic edge cases ---
+
+    def test_no_topics_for_generic_text(self):
+        result = self.extractor.extract_all("Hmm okay sure whatever")
+        self.assertEqual(result["topics"], [])
+
+    def test_topic_confidence_minimum(self):
+        """A single keyword match should give baseline confidence."""
+        result = self.extractor.extract_all("I like hiking")
+        topics = result["topics"]
+        if topics:
+            nature = next((t for t in topics if t["topic"] == "nature"), None)
+            if nature:
+                self.assertGreaterEqual(nature["confidence"], 0.4)
+
 
 if __name__ == "__main__":
     unittest.main()

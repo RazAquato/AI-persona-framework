@@ -44,3 +44,4 @@ config/.env
 data/echo_corpus/
 data/**/*.jsonl
 data/**/*.dump
+comfyui/

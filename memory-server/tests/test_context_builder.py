@@ -111,6 +111,45 @@ class TestContextBuilder(unittest.TestCase):
         fact_texts = [f[1] for f in context["facts"]]
         self.assertTrue(any("No scope all tiers" in t for t in fact_texts))
 
+    # --- Additional M2 coverage ---
+
+    def test_context_with_tier2_as_list(self):
+        """tier2 as topic list should still include knowledge facts."""
+        store_fact(self.user_id, "Topic list knowledge fact", tier="knowledge")
+        scope = {"tier1": True, "tier2": ["technology", "gaming"], "tier3": "private"}
+        context = build_context(self.user_id, "test input", memory_scope=scope)
+        fact_texts = [f[1] for f in context["facts"]]
+        self.assertTrue(any("Topic list knowledge" in t for t in fact_texts))
+
+    def test_context_with_tier2_as_boolean_true(self):
+        """tier2=True should include knowledge facts."""
+        store_fact(self.user_id, "Bool true knowledge fact", tier="knowledge")
+        scope = {"tier1": True, "tier2": True, "tier3": "private"}
+        context = build_context(self.user_id, "test input", memory_scope=scope)
+        fact_texts = [f[1] for f in context["facts"]]
+        self.assertTrue(any("Bool true knowledge" in t for t in fact_texts))
+
+    def test_context_empty_user(self):
+        """New user with no data should return empty lists without errors."""
+        self.cur.execute("INSERT INTO users (name) VALUES (%s) RETURNING id;", ("EmptyCtxUser",))
+        empty_user = self.cur.fetchone()[0]
+        self.conn.commit()
+        try:
+            context = build_context(empty_user, "hello")
+            self.assertIsInstance(context["facts"], list)
+            self.assertIsInstance(context["vectors"], list)
+            self.assertIsInstance(context["topics"], list)
+            self.assertIsInstance(context["user_topics"], list)
+        finally:
+            self.cur.execute("DELETE FROM users WHERE id = %s;", (empty_user,))
+            self.conn.commit()
+
+    def test_context_returns_user_topics(self):
+        """user_topics should include seeded topics."""
+        context = build_context(self.user_id, "anything")
+        topic_names = [t["topic"] for t in context["user_topics"]]
+        self.assertIn("hiking", topic_names)
+
 
 if __name__ == "__main__":
     unittest.main()
