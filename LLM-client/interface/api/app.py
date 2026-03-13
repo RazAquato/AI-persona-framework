@@ -28,6 +28,8 @@ Usage:
 import os
 import sys
 import re
+import json
+import requests
 
 # Path setup
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -40,7 +42,7 @@ for p in [LLM_CLIENT_ROOT, MEMORY_PATH, SHARED_PATH, TOOLS_PATH]:
     if p not in sys.path:
         sys.path.append(p)
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
@@ -48,7 +50,19 @@ from typing import Optional
 
 from core.engine import run_conversation_turn
 from core.router import is_tool_command, parse_tool_command
+from memory.chat_store import list_sessions, start_chat_session, get_chat_messages
 import tool_registry
+
+# Load persona configs
+PERSONA_CONFIG_PATH = os.path.join(LLM_CLIENT_ROOT, "config", "personality_config.json")
+with open(PERSONA_CONFIG_PATH) as f:
+    PERSONA_CONFIGS = json.load(f)
+
+# LLM server URL (for model info queries)
+from dotenv import load_dotenv
+_llm_env = os.path.join(LLM_CLIENT_ROOT, "config", ".env")
+load_dotenv(dotenv_path=_llm_env)
+LLM_SERVER = os.getenv("LLM_SERVER", "http://10.0.20.200:8080")
 
 app = FastAPI(title="AI Persona Chat")
 
@@ -157,14 +171,84 @@ async def list_tools():
     return {"tools": tool_registry.describe_tools()}
 
 
+@app.get("/model")
+async def model_info():
+    """Get the currently loaded LLM model name."""
+    try:
+        resp = requests.get(LLM_SERVER.rstrip("/") + "/v1/models", timeout=5)
+        resp.raise_for_status()
+        data = resp.json()
+        models = data.get("data", [])
+        if models:
+            model_id = models[0].get("id", "unknown")
+            # Clean up the GGUF filename to a friendly name
+            name = model_id.replace(".gguf", "")
+            params = models[0].get("meta", {}).get("n_params", 0)
+            return {"model": name, "params": params}
+        return {"model": "unknown", "params": 0}
+    except Exception:
+        return {"model": "offline", "params": 0}
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok"}
 
 
+@app.get("/personas")
+async def personas():
+    """List available personas."""
+    result = {}
+    for pid, cfg in PERSONA_CONFIGS.items():
+        result[pid] = {
+            "name": cfg.get("name", pid),
+            "description": cfg.get("description", ""),
+        }
+    return {"personas": result}
+
+
+@app.get("/sessions")
+async def sessions(user_id: int = Query(default=9999)):
+    """List sessions for a user, grouped by persona."""
+    rows = list_sessions(user_id, limit=100)
+    grouped = {}
+    for s in rows:
+        pid = s["personality_id"]
+        if pid not in grouped:
+            grouped[pid] = []
+        grouped[pid].append(s)
+    return {"sessions": grouped}
+
+
+class NewSessionRequest(BaseModel):
+    user_id: int = 9999
+    persona: str = "girlfriend"
+
+
+@app.post("/sessions/new")
+async def new_session(req: NewSessionRequest):
+    """Create a new chat session."""
+    sid = start_chat_session(req.user_id, req.persona)
+    return {"session_id": sid, "persona": req.persona}
+
+
+@app.get("/sessions/{session_id}/messages")
+async def session_messages(session_id: int):
+    """Get all messages for a session."""
+    rows = get_chat_messages(session_id)
+    messages = []
+    for r in rows:
+        messages.append({
+            "id": r[0],
+            "role": r[1],
+            "content": r[2],
+        })
+    return {"messages": messages}
+
+
 @app.get("/")
 async def index():
-    """Minimal chat UI."""
+    """Chat UI with sidebar for session management."""
     return HTMLResponse(CHAT_HTML)
 
 
@@ -175,46 +259,256 @@ CHAT_HTML = """<!DOCTYPE html>
 <title>AI Persona Chat</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, sans-serif; background: #1a1a2e; color: #eee; height: 100vh; display: flex; flex-direction: column; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #eee; height: 100vh; display: flex; }
+
+  /* Sidebar */
+  #sidebar { width: 280px; background: #16213e; display: flex; flex-direction: column; border-right: 1px solid #2a2a4a; flex-shrink: 0; }
+  #sidebar-header { padding: 16px; border-bottom: 1px solid #2a2a4a; }
+  #sidebar-header h2 { font-size: 16px; margin-bottom: 12px; color: #aab; }
+  #persona-select { width: 100%; padding: 8px 12px; background: #1a1a2e; color: #eee; border: 1px solid #444; border-radius: 6px; font-size: 14px; cursor: pointer; }
+  #persona-select:focus { outline: none; border-color: #6a6aaa; }
+  #new-chat-btn { width: 100%; margin-top: 10px; padding: 10px; background: #4a4a8a; border: none; border-radius: 6px; color: #eee; font-size: 14px; cursor: pointer; }
+  #new-chat-btn:hover { background: #5a5a9a; }
+
+  #session-list { flex: 1; overflow-y: auto; padding: 8px; }
+  .persona-group { margin-bottom: 12px; }
+  .persona-group-label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #667; padding: 8px 8px 4px; }
+  .session-item { padding: 10px 12px; border-radius: 6px; cursor: pointer; margin-bottom: 2px; font-size: 13px; line-height: 1.4; }
+  .session-item:hover { background: #1a1a2e; }
+  .session-item.active { background: #2a2a5a; }
+  .session-item .session-preview { color: #999; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+  .session-item .session-meta { color: #556; font-size: 11px; margin-top: 2px; }
+
+  /* Main chat area */
+  #main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  #chat-header { padding: 12px 20px; background: #16213e; border-bottom: 1px solid #2a2a4a; font-size: 14px; color: #aab; display: flex; align-items: center; gap: 12px; }
+  #chat-header .persona-name { font-weight: 600; color: #ccd; }
+  #chat-header .emotion-badge { font-size: 12px; color: #8a8aaa; }
+  #chat-header .model-badge { font-size: 11px; color: #556; margin-left: auto; }
+
   #chat { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 12px; }
-  .msg { max-width: 70%; padding: 12px 16px; border-radius: 16px; line-height: 1.5; white-space: pre-wrap; }
+  .msg { max-width: 70%; padding: 12px 16px; border-radius: 16px; line-height: 1.5; white-space: pre-wrap; word-wrap: break-word; }
   .msg.user { align-self: flex-end; background: #4a4a8a; }
   .msg.assistant { align-self: flex-start; background: #2a2a4a; }
   .msg img { max-width: 100%; border-radius: 8px; margin-top: 8px; display: block; }
-  #input-area { display: flex; padding: 16px; gap: 8px; background: #16213e; }
-  #input { flex: 1; padding: 12px; border: 1px solid #444; border-radius: 8px; background: #1a1a2e; color: #eee; font-size: 16px; }
-  #input:focus { outline: none; border-color: #6a6aaa; }
-  #send { padding: 12px 24px; background: #4a4a8a; border: none; border-radius: 8px; color: #eee; font-size: 16px; cursor: pointer; }
-  #send:hover { background: #5a5a9a; }
   .typing { color: #888; font-style: italic; }
+
+  #input-area { display: flex; padding: 16px; gap: 8px; background: #16213e; }
+  #input { flex: 1; padding: 12px; border: 1px solid #444; border-radius: 8px; background: #1a1a2e; color: #eee; font-size: 15px; }
+  #input:focus { outline: none; border-color: #6a6aaa; }
+  #send { padding: 12px 24px; background: #4a4a8a; border: none; border-radius: 8px; color: #eee; font-size: 15px; cursor: pointer; }
+  #send:hover { background: #5a5a9a; }
+
+  /* Empty state */
+  #empty-state { flex: 1; display: flex; align-items: center; justify-content: center; color: #556; font-size: 16px; }
 </style>
 </head>
 <body>
-<div id="chat"></div>
-<div id="input-area">
-  <input id="input" placeholder="Type a message or /image prompt..." autofocus>
-  <button id="send" onclick="sendMsg()">Send</button>
-</div>
-<script>
-const chat = document.getElementById('chat');
-const input = document.getElementById('input');
-let sessionId = null;
 
-input.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMsg(); } });
+<!-- Sidebar -->
+<div id="sidebar">
+  <div id="sidebar-header">
+    <h2>Personas</h2>
+    <select id="persona-select" onchange="onPersonaChange()"></select>
+    <button id="new-chat-btn" onclick="newChat()">+ New Chat</button>
+  </div>
+  <div id="session-list"></div>
+</div>
+
+<!-- Main -->
+<div id="main">
+  <div id="chat-header">
+    <span class="persona-name" id="header-persona">Select a persona</span>
+    <span class="emotion-badge" id="header-emotion"></span>
+    <span class="model-badge" id="header-model"></span>
+  </div>
+  <div id="chat">
+    <div id="empty-state">Start a new chat or select an existing one</div>
+  </div>
+  <div id="input-area">
+    <input id="input" placeholder="Type a message or /image prompt..." autofocus>
+    <button id="send" onclick="sendMsg()">Send</button>
+  </div>
+</div>
+
+<script>
+const chatEl = document.getElementById('chat');
+const inputEl = document.getElementById('input');
+const personaSelect = document.getElementById('persona-select');
+const sessionListEl = document.getElementById('session-list');
+const headerPersona = document.getElementById('header-persona');
+const headerEmotion = document.getElementById('header-emotion');
+const headerModel = document.getElementById('header-model');
+
+const USER_ID = 9999;
+let sessionId = null;
+let currentPersona = 'girlfriend';
+let personas = {};
+let allSessions = {};
+
+inputEl.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMsg(); }
+});
+
+// --- Init ---
+async function init() {
+  await loadPersonas();
+  await loadSessions();
+  await loadModelInfo();
+}
+
+async function loadModelInfo() {
+  try {
+    const resp = await fetch('/model');
+    const data = await resp.json();
+    if (data.model && data.model !== 'offline') {
+      headerModel.textContent = data.model;
+    } else {
+      headerModel.textContent = 'LLM offline';
+    }
+  } catch(e) {
+    headerModel.textContent = 'LLM offline';
+  }
+}
+
+async function loadPersonas() {
+  const resp = await fetch('/personas');
+  const data = await resp.json();
+  personas = data.personas;
+  personaSelect.innerHTML = '';
+  for (const [pid, info] of Object.entries(personas)) {
+    const opt = document.createElement('option');
+    opt.value = pid;
+    opt.textContent = info.name + ' (' + pid + ')';
+    if (pid === currentPersona) opt.selected = true;
+    personaSelect.appendChild(opt);
+  }
+}
+
+async function loadSessions() {
+  const resp = await fetch('/sessions?user_id=' + USER_ID);
+  const data = await resp.json();
+  allSessions = data.sessions;
+  renderSessionList();
+}
+
+function renderSessionList() {
+  sessionListEl.innerHTML = '';
+  const personaOrder = Object.keys(personas);
+  // Show current persona's sessions first, then others
+  const ordered = [currentPersona, ...personaOrder.filter(p => p !== currentPersona)];
+  const seen = new Set();
+
+  for (const pid of ordered) {
+    if (seen.has(pid)) continue;
+    seen.add(pid);
+    const sessions = allSessions[pid];
+    if (!sessions || sessions.length === 0) continue;
+
+    const label = document.createElement('div');
+    label.className = 'persona-group-label';
+    const pname = personas[pid] ? personas[pid].name : pid;
+    label.textContent = pname + ' (' + pid + ')';
+    sessionListEl.appendChild(label);
+
+    for (const s of sessions) {
+      const item = document.createElement('div');
+      item.className = 'session-item' + (s.id === sessionId ? ' active' : '');
+      item.onclick = () => resumeSession(s.id, pid);
+
+      const preview = s.last_user_msg || 'Empty session';
+      const time = s.last_time ? new Date(s.last_time).toLocaleString() : '';
+      const count = s.message_count || 0;
+
+      item.innerHTML = '<div>' + escHtml(preview) + '</div>'
+        + '<div class="session-meta">' + count + ' msgs' + (time ? ' &middot; ' + time : '') + '</div>';
+      sessionListEl.appendChild(item);
+    }
+  }
+}
+
+function onPersonaChange() {
+  currentPersona = personaSelect.value;
+  renderSessionList();
+}
+
+async function newChat() {
+  const resp = await fetch('/sessions/new', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ user_id: USER_ID, persona: currentPersona })
+  });
+  const data = await resp.json();
+  sessionId = data.session_id;
+  chatEl.innerHTML = '';
+  headerPersona.textContent = (personas[currentPersona] ? personas[currentPersona].name : currentPersona);
+  headerEmotion.textContent = '';
+  await loadSessions();
+  inputEl.focus();
+}
+
+async function resumeSession(sid, pid) {
+  sessionId = sid;
+  currentPersona = pid;
+  personaSelect.value = pid;
+
+  // Load existing messages
+  chatEl.innerHTML = '';
+  headerPersona.textContent = (personas[pid] ? personas[pid].name : pid);
+  headerEmotion.textContent = 'Loading...';
+
+  try {
+    const resp = await fetch('/sessions/' + sid + '/messages');
+    const data = await resp.json();
+    for (const m of data.messages) {
+      addMsg(m.role, m.content);
+    }
+    headerEmotion.textContent = '';
+  } catch(e) {
+    headerEmotion.textContent = 'Failed to load messages';
+  }
+
+  renderSessionList();
+  inputEl.focus();
+}
 
 async function sendMsg() {
-  const msg = input.value.trim();
+  const msg = inputEl.value.trim();
   if (!msg) return;
-  input.value = '';
+  inputEl.value = '';
+
+  // Auto-create session if none selected
+  if (!sessionId) {
+    const resp = await fetch('/sessions/new', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ user_id: USER_ID, persona: currentPersona })
+    });
+    const data = await resp.json();
+    sessionId = data.session_id;
+    chatEl.innerHTML = '';
+    headerPersona.textContent = (personas[currentPersona] ? personas[currentPersona].name : currentPersona);
+  }
+
   addMsg('user', msg);
   const typing = addMsg('assistant', 'Thinking...', 'typing');
+
   try {
-    const body = { message: msg, user_id: 9999, persona: 'girlfriend' };
-    if (sessionId) body.session_id = sessionId;
-    const resp = await fetch('/chat', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
+    const body = {
+      message: msg,
+      user_id: USER_ID,
+      persona: currentPersona,
+      session_id: sessionId
+    };
+    const resp = await fetch('/chat', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body)
+    });
     const data = await resp.json();
     sessionId = data.session_id || sessionId;
     typing.remove();
+
     let html = escHtml(data.reply);
     if (data.images && data.images.length > 0) {
       for (const img of data.images) {
@@ -223,6 +517,14 @@ async function sendMsg() {
       }
     }
     addMsgHtml('assistant', html);
+
+    // Update emotion display
+    if (data.emotion_description) {
+      headerEmotion.textContent = data.emotion_description;
+    }
+
+    // Refresh session list to show updated preview
+    loadSessions();
   } catch(e) {
     typing.remove();
     addMsg('assistant', 'Error: ' + e.message);
@@ -230,11 +532,15 @@ async function sendMsg() {
 }
 
 function addMsg(role, text, cls) {
+  // Remove empty state if present
+  const empty = document.getElementById('empty-state');
+  if (empty) empty.remove();
+
   const div = document.createElement('div');
   div.className = 'msg ' + role + (cls ? ' ' + cls : '');
   div.textContent = text;
-  chat.appendChild(div);
-  chat.scrollTop = chat.scrollHeight;
+  chatEl.appendChild(div);
+  chatEl.scrollTop = chatEl.scrollHeight;
   return div;
 }
 
@@ -242,12 +548,19 @@ function addMsgHtml(role, html) {
   const div = document.createElement('div');
   div.className = 'msg ' + role;
   div.innerHTML = html;
-  chat.appendChild(div);
-  chat.scrollTop = chat.scrollHeight;
+  chatEl.appendChild(div);
+  chatEl.scrollTop = chatEl.scrollHeight;
   return div;
 }
 
-function escHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function escHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+// Boot
+init();
 </script>
 </body>
 </html>"""

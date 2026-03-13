@@ -10,7 +10,8 @@ from memory.chat_store import (
     start_chat_session,
     log_chat_message,
     get_chat_messages,
-    get_last_session
+    get_last_session,
+    list_sessions
 )
 
 
@@ -76,6 +77,39 @@ class TestChatStore(unittest.TestCase):
         session_id = start_chat_session(self.user_id)
         last_id = get_last_session(self.user_id)
         self.assertEqual(session_id, last_id)
+
+    def test_list_sessions_returns_list(self):
+        sessions = list_sessions(self.user_id)
+        self.assertIsInstance(sessions, list)
+
+    def test_list_sessions_contains_expected_keys(self):
+        start_chat_session(self.user_id, personality_id="test_persona")
+        sessions = list_sessions(self.user_id)
+        self.assertGreater(len(sessions), 0)
+        s = sessions[0]
+        for key in ("id", "personality_id", "start_time", "message_count", "last_user_msg", "last_time"):
+            self.assertIn(key, s)
+
+    def test_list_sessions_with_messages(self):
+        sid = start_chat_session(self.user_id, personality_id="test_persona")
+        log_chat_message(sid, self.user_id, "user", "Hello from list_sessions test")
+        log_chat_message(sid, self.user_id, "assistant", "Hi there")
+        sessions = list_sessions(self.user_id)
+        # Find our session
+        found = [s for s in sessions if s["id"] == sid]
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0]["message_count"], 2)
+        self.assertIn("Hello from list_sessions", found[0]["last_user_msg"])
+
+    def test_list_sessions_respects_limit(self):
+        for _ in range(3):
+            start_chat_session(self.user_id, personality_id="limit_test")
+        sessions = list_sessions(self.user_id, limit=2)
+        self.assertLessEqual(len(sessions), 2)
+
+    def test_list_sessions_empty_user(self):
+        sessions = list_sessions(999999)
+        self.assertEqual(sessions, [])
 
 
 if __name__ == "__main__":

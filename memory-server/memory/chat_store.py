@@ -124,3 +124,44 @@ def get_last_session(user_id: int):
     finally:
         conn.close()
 
+
+def list_sessions(user_id: int, limit: int = 50):
+    """
+    List all sessions for a user with preview info.
+    Returns list of dicts: [{id, personality_id, start_time, message_count, last_message, last_time}]
+    """
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT
+                    s.id,
+                    s.personality_id,
+                    s.start_time,
+                    COUNT(m.id) AS message_count,
+                    (SELECT content FROM chat_messages
+                     WHERE session_id = s.id AND role = 'user'
+                     ORDER BY timestamp DESC LIMIT 1) AS last_user_msg,
+                    MAX(m.timestamp) AS last_time
+                FROM chat_sessions s
+                LEFT JOIN chat_messages m ON m.session_id = s.id
+                WHERE s.user_id = %s
+                GROUP BY s.id
+                ORDER BY COALESCE(MAX(m.timestamp), s.start_time) DESC
+                LIMIT %s;
+            """, (user_id, limit))
+            rows = cur.fetchall()
+            return [
+                {
+                    "id": r[0],
+                    "personality_id": r[1] or "default",
+                    "start_time": r[2].isoformat() if r[2] else None,
+                    "message_count": r[3],
+                    "last_user_msg": (r[4][:80] + "...") if r[4] and len(r[4]) > 80 else r[4],
+                    "last_time": r[5].isoformat() if r[5] else None,
+                }
+                for r in rows
+            ]
+    finally:
+        conn.close()
+
