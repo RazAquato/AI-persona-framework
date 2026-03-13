@@ -18,12 +18,8 @@
 Persona Emotion Store
 ---------------------
 CRUD operations for the persona's emotional state toward a specific user.
-Uses the existing `emotional_relationships` table:
-    (id, user_id, target_type, target_name, emotions JSONB, last_updated)
-
-Convention:
-    target_type = 'persona'
-    target_name = personality_id (e.g. 'eva', 'eva-nsfw', 'default')
+Uses `emotional_relationships` table keyed by (user_id, persona_id).
+Also logs state changes to `emotion_history` for long-term tracking.
 """
 
 import os
@@ -71,7 +67,7 @@ def get_connection():
     return psycopg2.connect(**PG_CONFIG)
 
 
-def load_persona_emotion(user_id: int, personality_id: str) -> dict:
+def load_persona_emotion(user_id: int, persona_id: int) -> dict:
     """
     Load the persona's current emotional state toward a user.
     Returns dict with keys: emotions (dict), last_updated (datetime), is_new (bool).
@@ -83,9 +79,9 @@ def load_persona_emotion(user_id: int, personality_id: str) -> dict:
             cur.execute("""
                 SELECT emotions, last_updated
                 FROM emotional_relationships
-                WHERE user_id = %s AND target_type = 'persona' AND target_name = %s
+                WHERE user_id = %s AND persona_id = %s
                 LIMIT 1;
-            """, (user_id, personality_id))
+            """, (user_id, persona_id))
             row = cur.fetchone()
             if row:
                 emotions = row[0] if row[0] else dict(DEFAULT_EMOTIONS)
@@ -104,22 +100,30 @@ def load_persona_emotion(user_id: int, personality_id: str) -> dict:
         conn.close()
 
 
-def save_persona_emotion(user_id: int, personality_id: str, emotions: dict):
+def save_persona_emotion(user_id: int, persona_id: int, emotions: dict):
     """
     Upsert the persona's emotional state toward a user.
     Creates the record if it doesn't exist, updates if it does.
+    Also appends a snapshot to emotion_history.
     """
     conn = get_connection()
     try:
         with conn.cursor() as cur:
             cur.execute("""
-                INSERT INTO emotional_relationships (user_id, target_type, target_name, emotions, last_updated)
-                VALUES (%s, 'persona', %s, %s, NOW())
-                ON CONFLICT (user_id, target_type, target_name)
+                INSERT INTO emotional_relationships (user_id, persona_id, emotions, last_updated)
+                VALUES (%s, %s, %s, NOW())
+                ON CONFLICT (user_id, persona_id)
                 DO UPDATE SET
                     emotions = EXCLUDED.emotions,
-                    last_updated = EXCLUDED.last_updated;
-            """, (user_id, personality_id, Json(emotions)))
+                    last_updated = EXCLUDED.last_updated
+                RETURNING id;
+            """, (user_id, persona_id, Json(emotions)))
+            rel_id = cur.fetchone()[0]
+            # Append to emotion history
+            cur.execute("""
+                INSERT INTO emotion_history (relationship_id, emotions)
+                VALUES (%s, %s);
+            """, (rel_id, Json(emotions)))
         conn.commit()
     finally:
         conn.close()
@@ -128,20 +132,20 @@ def save_persona_emotion(user_id: int, personality_id: str, emotions: dict):
 def get_all_persona_emotions(user_id: int) -> list:
     """
     Get all persona emotion states for a user (across all personas).
-    Returns list of dicts with personality_id, emotions, last_updated.
+    Returns list of dicts with persona_id, emotions, last_updated.
     """
     conn = get_connection()
     try:
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT target_name, emotions, last_updated
+                SELECT persona_id, emotions, last_updated
                 FROM emotional_relationships
-                WHERE user_id = %s AND target_type = 'persona'
+                WHERE user_id = %s
                 ORDER BY last_updated DESC;
             """, (user_id,))
             return [
                 {
-                    "personality_id": row[0],
+                    "persona_id": row[0],
                     "emotions": row[1],
                     "last_updated": row[2],
                 }

@@ -1,22 +1,36 @@
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program. If not, see <https://www.gnu.org/licenses/>.
+# AI-persona-framework
+# Copyright (C) 2025 Kenneth Haider
+# GPLv3 License - See <https://www.gnu.org/licenses/>
 
 import unittest
+from unittest.mock import patch
 from core import router
+from memory.persona_emotion_store import DEFAULT_EMOTIONS
+
+FAKE_PERSONA = {
+    "id": 1, "user_id": 9999, "slug": "girlfriend", "name": "Maya",
+    "description": "Test", "system_prompt": "You are Maya.",
+    "nsfw_capable": False, "nsfw_prompt_addon": None,
+    "nsfw_system_prompt_addon": None,
+    "memory_scope": {"tier1": True, "tier2": "all", "tier3": "private"},
+    "is_public": False,
+}
+
+FAKE_EMOTION_STATE = {
+    "emotions": dict(DEFAULT_EMOTIONS),
+    "last_updated": None,
+    "is_new": True,
+}
+
 
 class TestRouter(unittest.TestCase):
 
-    def test_non_tool_input(self):
+    @patch("core.engine.save_persona_emotion")
+    @patch("core.engine.load_persona_emotion", return_value=FAKE_EMOTION_STATE)
+    @patch("core.engine.get_persona", return_value=FAKE_PERSONA)
+    def test_non_tool_input(self, mock_persona, mock_load_emo, mock_save_emo):
         input_text = "Hello, how are you?"
-        response = router.handle_user_input(input_text)
+        response = router.handle_user_input(input_text, persona_id=1)
         self.assertIsInstance(response, str)
         self.assertGreater(len(response), 0)
 

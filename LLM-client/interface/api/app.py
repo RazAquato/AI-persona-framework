@@ -54,12 +54,12 @@ from memory.chat_store import list_sessions, start_chat_session, get_chat_messag
 from memory.user_store import (
     create_user, get_user_by_name, get_user_by_id, get_session_owner,
 )
+from memory.persona_store import (
+    list_personas, get_persona, get_persona_by_slug,
+    create_persona as db_create_persona, update_persona as db_update_persona,
+    delete_persona as db_delete_persona, seed_default_personas,
+)
 import tool_registry
-
-# Load persona configs
-PERSONA_CONFIG_PATH = os.path.join(LLM_CLIENT_ROOT, "config", "personality_config.json")
-with open(PERSONA_CONFIG_PATH) as f:
-    PERSONA_CONFIGS = json.load(f)
 
 # LLM server URL (for model info queries)
 from dotenv import load_dotenv
@@ -134,6 +134,7 @@ async def api_register(req: RegisterRequest, response: Response):
         raise HTTPException(status_code=409, detail="Username already taken")
     pw_hash = hash_password(req.password)
     user_id = create_user(req.username, pw_hash)
+    seed_default_personas(user_id)
     cookie = create_auth_cookie(user_id)
     response.set_cookie(
         COOKIE_NAME, cookie, max_age=COOKIE_MAX_AGE,
@@ -162,7 +163,7 @@ async def api_me(user_id: int = Depends(get_current_user)):
 
 class ChatRequest(BaseModel):
     message: str
-    persona: str = "girlfriend"
+    persona_id: int
     session_id: Optional[int] = None
     nsfw_mode: bool = False
     incognito: bool = False
@@ -182,6 +183,11 @@ class ChatResponse(BaseModel):
 async def chat(req: ChatRequest, user_id: int = Depends(get_current_user)):
     """Main chat endpoint. Handles both /commands and regular messages."""
     user_input = req.message.strip()
+
+    # Verify persona belongs to user
+    persona = get_persona(req.persona_id)
+    if not persona or persona["user_id"] != user_id:
+        raise HTTPException(status_code=403, detail="Persona does not belong to you")
 
     # Verify session ownership if resuming
     if req.session_id:
@@ -223,7 +229,7 @@ async def chat(req: ChatRequest, user_id: int = Depends(get_current_user)):
     result = run_conversation_turn(
         user_id=user_id,
         user_input=user_input,
-        personality_id=req.persona,
+        persona_id=req.persona_id,
         session_id=req.session_id,
         nsfw_mode=req.nsfw_mode,
         incognito=req.incognito,
@@ -290,16 +296,63 @@ async def health():
 
 
 @app.get("/personas")
-async def personas(user_id: int = Depends(get_current_user)):
-    """List available personas."""
-    result = {}
-    for pid, cfg in PERSONA_CONFIGS.items():
-        result[pid] = {
-            "name": cfg.get("name", pid),
-            "description": cfg.get("description", ""),
-            "nsfw_capable": cfg.get("nsfw_capable", False),
-        }
-    return {"personas": result}
+async def personas_list(user_id: int = Depends(get_current_user)):
+    """List personas for the authenticated user."""
+    rows = list_personas(user_id)
+    return {"personas": rows}
+
+
+class CreatePersonaRequest(BaseModel):
+    slug: str
+    name: str
+    description: str = ""
+    system_prompt: str = ""
+    nsfw_capable: bool = False
+    nsfw_prompt_addon: str = None
+    memory_scope: Optional[dict] = None
+
+
+@app.post("/personas")
+async def personas_create(req: CreatePersonaRequest, user_id: int = Depends(get_current_user)):
+    """Create a new persona for the authenticated user."""
+    if not req.slug or not req.name:
+        raise HTTPException(status_code=400, detail="slug and name are required")
+    existing = get_persona_by_slug(user_id, req.slug)
+    if existing:
+        raise HTTPException(status_code=409, detail="Slug already in use")
+    pid = db_create_persona(
+        user_id=user_id, slug=req.slug, name=req.name,
+        description=req.description, system_prompt=req.system_prompt,
+        nsfw_capable=req.nsfw_capable, nsfw_prompt_addon=req.nsfw_prompt_addon,
+        memory_scope=req.memory_scope,
+    )
+    return {"persona_id": pid, "slug": req.slug, "name": req.name}
+
+
+@app.put("/personas/{persona_id}")
+async def personas_update(persona_id: int, req: CreatePersonaRequest,
+                          user_id: int = Depends(get_current_user)):
+    """Update a persona (must belong to the authenticated user)."""
+    persona = get_persona(persona_id)
+    if not persona or persona["user_id"] != user_id:
+        raise HTTPException(status_code=403, detail="Persona does not belong to you")
+    db_update_persona(
+        persona_id, slug=req.slug, name=req.name,
+        description=req.description, system_prompt=req.system_prompt,
+        nsfw_capable=req.nsfw_capable, nsfw_prompt_addon=req.nsfw_prompt_addon,
+        memory_scope=req.memory_scope,
+    )
+    return {"ok": True}
+
+
+@app.delete("/personas/{persona_id}")
+async def personas_delete(persona_id: int, user_id: int = Depends(get_current_user)):
+    """Delete a persona (must belong to the authenticated user)."""
+    persona = get_persona(persona_id)
+    if not persona or persona["user_id"] != user_id:
+        raise HTTPException(status_code=403, detail="Persona does not belong to you")
+    db_delete_persona(persona_id)
+    return {"ok": True}
 
 
 @app.get("/sessions")
@@ -308,15 +361,15 @@ async def sessions(user_id: int = Depends(get_current_user)):
     rows = list_sessions(user_id, limit=100)
     grouped = {}
     for s in rows:
-        pid = s["personality_id"]
-        if pid not in grouped:
-            grouped[pid] = []
-        grouped[pid].append(s)
+        key = s.get("persona_slug") or str(s.get("persona_id") or "unknown")
+        if key not in grouped:
+            grouped[key] = []
+        grouped[key].append(s)
     return {"sessions": grouped}
 
 
 class NewSessionRequest(BaseModel):
-    persona: str = "girlfriend"
+    persona_id: int
     nsfw_mode: bool = False
     incognito: bool = False
 
@@ -324,9 +377,13 @@ class NewSessionRequest(BaseModel):
 @app.post("/sessions/new")
 async def new_session(req: NewSessionRequest, user_id: int = Depends(get_current_user)):
     """Create a new chat session for the authenticated user."""
-    sid = start_chat_session(user_id, req.persona,
+    persona = get_persona(req.persona_id)
+    if not persona or persona["user_id"] != user_id:
+        raise HTTPException(status_code=403, detail="Persona does not belong to you")
+    sid = start_chat_session(user_id, req.persona_id,
                              incognito=req.incognito, nsfw_mode=req.nsfw_mode)
-    return {"session_id": sid, "persona": req.persona,
+    return {"session_id": sid, "persona_id": req.persona_id,
+            "persona_name": persona["name"],
             "incognito": req.incognito, "nsfw_mode": req.nsfw_mode}
 
 
@@ -575,15 +632,26 @@ const incognitoToggle = document.getElementById('incognito-toggle');
 const usernameDisplay = document.getElementById('username-display');
 
 let sessionId = null;
-let currentPersona = 'girlfriend';
+let currentPersonaId = null;
 let sessionNsfw = false;
 let sessionIncognito = false;
-let personas = {};
-let allSessions = {};
+let personas = [];       // array of {id, slug, name, nsfw_capable, ...}
+let allSessions = {};    // grouped by persona_slug
 
 inputEl.addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMsg(); }
 });
+
+// --- Helpers ---
+function getPersonaById(id) {
+  return personas.find(p => p.id === id) || null;
+}
+function getPersonaBySlug(slug) {
+  return personas.find(p => p.slug === slug) || null;
+}
+function currentPersona() {
+  return getPersonaById(currentPersonaId);
+}
 
 // --- Auth helpers ---
 async function authFetch(url, opts) {
@@ -633,14 +701,19 @@ async function loadModelInfo() {
 async function loadPersonas() {
   const resp = await authFetch('/personas');
   const data = await resp.json();
-  personas = data.personas;
+  personas = data.personas;  // array of persona objects
   personaSelect.innerHTML = '';
-  for (const [pid, info] of Object.entries(personas)) {
+  for (const p of personas) {
     const opt = document.createElement('option');
-    opt.value = pid;
-    opt.textContent = info.name + ' (' + pid + ')';
-    if (pid === currentPersona) opt.selected = true;
+    opt.value = p.id;
+    opt.textContent = p.name + ' (' + p.slug + ')';
+    if (p.id === currentPersonaId) opt.selected = true;
     personaSelect.appendChild(opt);
+  }
+  // Select first persona if none selected
+  if (!currentPersonaId && personas.length > 0) {
+    currentPersonaId = personas[0].id;
+    personaSelect.value = currentPersonaId;
   }
   onPersonaChange();
 }
@@ -648,32 +721,37 @@ async function loadPersonas() {
 async function loadSessions() {
   const resp = await authFetch('/sessions');
   const data = await resp.json();
-  allSessions = data.sessions;
+  allSessions = data.sessions;  // grouped by persona_slug
   renderSessionList();
 }
 
 function renderSessionList() {
   sessionListEl.innerHTML = '';
-  const personaOrder = Object.keys(personas);
-  const ordered = [currentPersona, ...personaOrder.filter(p => p !== currentPersona)];
-  const seen = new Set();
+  const cp = currentPersona();
+  const currentSlug = cp ? cp.slug : null;
 
-  for (const pid of ordered) {
-    if (seen.has(pid)) continue;
-    seen.add(pid);
-    const sessions = allSessions[pid];
+  // Collect all group keys, current persona's slug first
+  const allKeys = Object.keys(allSessions);
+  const ordered = [];
+  if (currentSlug && allSessions[currentSlug]) ordered.push(currentSlug);
+  for (const k of allKeys) {
+    if (k !== currentSlug) ordered.push(k);
+  }
+
+  for (const slug of ordered) {
+    const sessions = allSessions[slug];
     if (!sessions || sessions.length === 0) continue;
 
     const label = document.createElement('div');
     label.className = 'persona-group-label';
-    const pname = personas[pid] ? personas[pid].name : pid;
-    label.textContent = pname + ' (' + pid + ')';
+    const pInfo = getPersonaBySlug(slug);
+    label.textContent = pInfo ? pInfo.name : slug;
     sessionListEl.appendChild(label);
 
     for (const s of sessions) {
       const item = document.createElement('div');
       item.className = 'session-item' + (s.id === sessionId ? ' active' : '') + (s.incognito ? ' incognito' : '');
-      item.onclick = () => resumeSession(s.id, pid, s.incognito, s.nsfw_mode);
+      item.onclick = () => resumeSession(s.id, s.persona_id, s.incognito, s.nsfw_mode);
 
       const preview = s.last_user_msg || 'Empty session';
       const time = s.last_time ? new Date(s.last_time).toLocaleString() : '';
@@ -690,8 +768,8 @@ function renderSessionList() {
 }
 
 function onPersonaChange() {
-  currentPersona = personaSelect.value;
-  const p = personas[currentPersona];
+  currentPersonaId = parseInt(personaSelect.value) || null;
+  const p = currentPersona();
   if (p && p.nsfw_capable) {
     nsfwToggleRow.classList.remove('hidden');
   } else {
@@ -701,41 +779,43 @@ function onPersonaChange() {
   renderSessionList();
 }
 
+function buildHeader(persona) {
+  let header = persona ? persona.name : 'Unknown';
+  if (sessionIncognito) header += ' [incognito]';
+  if (sessionNsfw) header += ' [nsfw]';
+  return header;
+}
+
 async function newChat() {
+  if (!currentPersonaId) return;
   sessionNsfw = nsfwToggle.checked;
   sessionIncognito = incognitoToggle.checked;
   const resp = await authFetch('/sessions/new', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({
-      persona: currentPersona,
+      persona_id: currentPersonaId,
       nsfw_mode: sessionNsfw, incognito: sessionIncognito
     })
   });
   const data = await resp.json();
   sessionId = data.session_id;
   chatEl.innerHTML = '';
-  let header = (personas[currentPersona] ? personas[currentPersona].name : currentPersona);
-  if (sessionIncognito) header += ' [incognito]';
-  if (sessionNsfw) header += ' [nsfw]';
-  headerPersona.textContent = header;
+  headerPersona.textContent = buildHeader(currentPersona());
   headerEmotion.textContent = '';
   await loadSessions();
   inputEl.focus();
 }
 
-async function resumeSession(sid, pid, isIncognito, isNsfw) {
+async function resumeSession(sid, personaId, isIncognito, isNsfw) {
   sessionId = sid;
-  currentPersona = pid;
+  currentPersonaId = personaId;
   sessionIncognito = isIncognito || false;
   sessionNsfw = isNsfw || false;
-  personaSelect.value = pid;
+  personaSelect.value = personaId;
 
   chatEl.innerHTML = '';
-  let header = (personas[pid] ? personas[pid].name : pid);
-  if (sessionIncognito) header += ' [incognito]';
-  if (sessionNsfw) header += ' [nsfw]';
-  headerPersona.textContent = header;
+  headerPersona.textContent = buildHeader(getPersonaById(personaId));
   headerEmotion.textContent = 'Loading...';
 
   try {
@@ -756,6 +836,7 @@ async function resumeSession(sid, pid, isIncognito, isNsfw) {
 async function sendMsg() {
   const msg = inputEl.value.trim();
   if (!msg) return;
+  if (!currentPersonaId) return;
   inputEl.value = '';
 
   if (!sessionId) {
@@ -765,17 +846,14 @@ async function sendMsg() {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
-        persona: currentPersona,
+        persona_id: currentPersonaId,
         nsfw_mode: sessionNsfw, incognito: sessionIncognito
       })
     });
     const data = await resp.json();
     sessionId = data.session_id;
     chatEl.innerHTML = '';
-    let header = (personas[currentPersona] ? personas[currentPersona].name : currentPersona);
-    if (sessionIncognito) header += ' [incognito]';
-    if (sessionNsfw) header += ' [nsfw]';
-    headerPersona.textContent = header;
+    headerPersona.textContent = buildHeader(currentPersona());
   }
 
   addMsg('user', msg);
@@ -784,7 +862,7 @@ async function sendMsg() {
   try {
     const body = {
       message: msg,
-      persona: currentPersona,
+      persona_id: currentPersonaId,
       session_id: sessionId,
       nsfw_mode: sessionNsfw,
       incognito: sessionIncognito

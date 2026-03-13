@@ -45,16 +45,22 @@ CREATE TABLE users (
 );
 """)
 
-# AI Personalities
+# AI Personas (owned by users, seeded on registration)
 cur.execute("""
 CREATE TABLE user_personalities (
     id SERIAL PRIMARY KEY,
     user_id INT REFERENCES users(id),
+    slug TEXT NOT NULL,
     name TEXT NOT NULL,
     description TEXT,
+    system_prompt TEXT,
+    nsfw_capable BOOLEAN DEFAULT FALSE,
+    nsfw_prompt_addon TEXT,
+    memory_scope JSONB,
     personality_config JSONB,
     is_public BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, slug)
 );
 """)
 
@@ -63,7 +69,7 @@ cur.execute("""
 CREATE TABLE chat_sessions (
     id SERIAL PRIMARY KEY,
     user_id INT REFERENCES users(id),
-    personality_id TEXT,
+    persona_id INT REFERENCES user_personalities(id),
     start_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     context_summary TEXT,
     incognito BOOLEAN DEFAULT FALSE,
@@ -90,22 +96,15 @@ CREATE TABLE chat_messages (
 cur.execute("""
 CREATE TABLE message_metadata (
     message_id INT PRIMARY KEY REFERENCES chat_messages(id) ON DELETE CASCADE,
-
-    -- Memory & context metadata
     was_buffered BOOLEAN,
     embedding_used BOOLEAN,
     memory_hits INT,
     memory_layers_used TEXT[],
-
-    -- Tool and timing
     tool_triggered TEXT,
     response_latency_ms INT,
-
-    -- Emotional and psychological state
     emotional_tone TEXT,
     emotions JSONB,
     personality_tags TEXT[],
-
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 """)
@@ -132,15 +131,25 @@ CREATE TABLE topic_tags (
 );
 """)
 
-# Emotional Relationships
+# Emotional Relationships (per user + persona)
 cur.execute("""
 CREATE TABLE emotional_relationships (
     id SERIAL PRIMARY KEY,
     user_id INT REFERENCES users(id),
-    target_type TEXT,
-    target_name TEXT,
+    persona_id INT REFERENCES user_personalities(id),
     emotions JSONB,
-    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, persona_id)
+);
+""")
+
+# Emotion History (append-only log of emotion state changes)
+cur.execute("""
+CREATE TABLE emotion_history (
+    id SERIAL PRIMARY KEY,
+    relationship_id INT REFERENCES emotional_relationships(id) ON DELETE CASCADE,
+    emotions JSONB NOT NULL,
+    recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 """)
 
@@ -148,4 +157,4 @@ conn.commit()
 cur.close()
 conn.close()
 
-print("✅ PostgreSQL schema created with emotion tracking and 1:1 metadata linkage.")
+print("PostgreSQL schema created.")

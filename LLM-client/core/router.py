@@ -60,7 +60,7 @@ def parse_tool_command(user_input: str):
     return None, None
 
 
-def handle_user_input(user_input: str, session_id: str = None):
+def handle_user_input(user_input: str, session_id: str = None, persona_id: int = None):
     """
     Router entry point. Routes to a tool or the core engine.
     Returns: assistant_output (str)
@@ -102,5 +102,5 @@ def handle_user_input(user_input: str, session_id: str = None):
                 return error_msg
 
     # Fallback: call LLM engine
-    response = engine.process_input(user_input, session_id=session_id)
+    response = engine.process_input(user_input, session_id=session_id, persona_id=persona_id)
     return response

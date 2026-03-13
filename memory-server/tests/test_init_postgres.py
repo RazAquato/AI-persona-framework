@@ -28,7 +28,8 @@ class TestPostgresInit(unittest.TestCase):
             'facts',
             'topic_tags',
             'message_metadata',
-            'emotional_relationships'
+            'emotional_relationships',
+            'emotion_history',
         }
 
         self.cur.execute("""
@@ -49,7 +50,8 @@ class TestPostgresInit(unittest.TestCase):
             'facts',
             'topic_tags',
             'message_metadata',
-            'emotional_relationships'
+            'emotional_relationships',
+            'emotion_history',
         }
 
         self.cur.execute("""

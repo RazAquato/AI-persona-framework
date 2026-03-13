@@ -35,7 +35,7 @@ PG_CONFIG = {
 def get_connection():
     return psycopg2.connect(**PG_CONFIG)
 
-def start_chat_session(user_id: int, personality_id: str = None, context_summary: str = None,
+def start_chat_session(user_id: int, persona_id: int = None, context_summary: str = None,
                        incognito: bool = False, nsfw_mode: bool = False) -> int:
     """
     Create a new chat session and return the session ID.
@@ -44,10 +44,10 @@ def start_chat_session(user_id: int, personality_id: str = None, context_summary
     try:
         with conn.cursor() as cur:
             cur.execute("""
-                INSERT INTO chat_sessions (user_id, personality_id, context_summary, incognito, nsfw_mode)
+                INSERT INTO chat_sessions (user_id, persona_id, context_summary, incognito, nsfw_mode)
                 VALUES (%s, %s, %s, %s, %s)
                 RETURNING id;
-            """, (user_id, personality_id, context_summary, incognito, nsfw_mode))
+            """, (user_id, persona_id, context_summary, incognito, nsfw_mode))
             session_id = cur.fetchone()[0]
         conn.commit()
         return session_id
@@ -137,7 +137,7 @@ def list_sessions(user_id: int, limit: int = 50):
             cur.execute("""
                 SELECT
                     s.id,
-                    s.personality_id,
+                    s.persona_id,
                     s.start_time,
                     COUNT(m.id) AS message_count,
                     (SELECT content FROM chat_messages
@@ -145,11 +145,14 @@ def list_sessions(user_id: int, limit: int = 50):
                      ORDER BY timestamp DESC LIMIT 1) AS last_user_msg,
                     MAX(m.timestamp) AS last_time,
                     s.incognito,
-                    s.nsfw_mode
+                    s.nsfw_mode,
+                    p.slug,
+                    p.name
                 FROM chat_sessions s
                 LEFT JOIN chat_messages m ON m.session_id = s.id
+                LEFT JOIN user_personalities p ON p.id = s.persona_id
                 WHERE s.user_id = %s
-                GROUP BY s.id
+                GROUP BY s.id, p.slug, p.name
                 ORDER BY COALESCE(MAX(m.timestamp), s.start_time) DESC
                 LIMIT %s;
             """, (user_id, limit))
@@ -157,13 +160,15 @@ def list_sessions(user_id: int, limit: int = 50):
             return [
                 {
                     "id": r[0],
-                    "personality_id": r[1] or "girlfriend",
+                    "persona_id": r[1],
                     "start_time": r[2].isoformat() if r[2] else None,
                     "message_count": r[3],
                     "last_user_msg": (r[4][:80] + "...") if r[4] and len(r[4]) > 80 else r[4],
                     "last_time": r[5].isoformat() if r[5] else None,
                     "incognito": r[6] or False,
                     "nsfw_mode": r[7] or False,
+                    "persona_slug": r[8],
+                    "persona_name": r[9],
                 }
                 for r in rows
             ]

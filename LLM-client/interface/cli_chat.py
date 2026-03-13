@@ -43,6 +43,7 @@ for p in [LLM_CLIENT_ROOT, MEMORY_PATH, SHARED_PATH]:
 
 from core.engine import run_conversation_turn
 from core.router import is_tool_command, parse_tool_command
+from memory.persona_store import get_persona_by_slug, list_personas
 import re
 
 # Add shared tools to path
@@ -67,20 +68,37 @@ def format_emotions(emotions: dict, top_n: int = 5) -> str:
 
 def main():
     parser = argparse.ArgumentParser(description="AI Persona CLI Chat")
-    parser.add_argument("--persona", default="girlfriend", help="Personality ID (girlfriend, trainer, psychiatrist, debug)")
+    parser.add_argument("--persona", default="girlfriend", help="Persona slug (girlfriend, trainer, psychiatrist, debug)")
     parser.add_argument("--user", type=int, default=9999, help="User ID (default: 9999 test user)")
     parser.add_argument("--show-emotions", action="store_true", help="Show persona emotion state each turn")
     parser.add_argument("--show-user-emotions", action="store_true", help="Show detected user emotions each turn")
     parser.add_argument("--incognito", action="store_true", help="Incognito mode: no data saved to DB")
     parser.add_argument("--nsfw", action="store_true", help="Enable NSFW mode (requires nsfw_capable persona)")
+    parser.add_argument("--list", action="store_true", help="List available personas and exit")
     args = parser.parse_args()
 
-    persona_name = args.persona
     user_id = args.user
+
+    if args.list:
+        personas = list_personas(user_id)
+        print(f"Personas for user {user_id}:")
+        for p in personas:
+            nsfw = " [nsfw_capable]" if p.get("nsfw_capable") else ""
+            print(f"  {p['slug']:20s} {p['name']:15s} id={p['id']}{nsfw}")
+        return
+
+    # Resolve persona slug to numeric ID
+    persona = get_persona_by_slug(user_id, args.persona)
+    if not persona:
+        print(f"Error: persona '{args.persona}' not found for user {user_id}.")
+        print("Use --list to see available personas.")
+        return
+    persona_id = persona["id"]
+    persona_name = persona["name"]
     session_id = None  # engine will auto-create/resume
 
     print(f"--- AI Persona Chat ---")
-    print(f"Persona: {persona_name} | User ID: {user_id}")
+    print(f"Persona: {persona_name} ({args.persona}) | User ID: {user_id}")
     if args.incognito:
         print("  [INCOGNITO MODE - no data will be saved]")
     if args.nsfw:
@@ -137,7 +155,7 @@ def main():
             result = run_conversation_turn(
                 user_id=user_id,
                 user_input=user_input,
-                personality_id=persona_name,
+                persona_id=persona_id,
                 session_id=session_id,
                 nsfw_mode=args.nsfw,
                 incognito=args.incognito,
@@ -151,7 +169,7 @@ def main():
             reply = re.sub(r'<think>.*?</think>\s*', '', reply, flags=re.DOTALL).strip()
 
             # Print reply
-            print(f"\n{persona_name.capitalize()}: {reply}\n")
+            print(f"\n{persona_name}: {reply}\n")
 
             # Show emotions if enabled
             if show_emotions and result.get("persona_emotions"):

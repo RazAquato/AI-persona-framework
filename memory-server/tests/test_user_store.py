@@ -16,6 +16,8 @@ class TestUserStore(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        import random
+        cls._suffix = str(random.randint(100000, 999999))
         BASE_DIR = os.path.dirname(os.path.abspath(__file__))
         ENV_PATH = os.path.join(BASE_DIR, "..", "config", ".env")
         load_dotenv(dotenv_path=os.path.abspath(ENV_PATH))
@@ -39,24 +41,29 @@ class TestUserStore(unittest.TestCase):
         cur.close()
         cls.conn.close()
 
+    def _name(self, base):
+        return f"{base}_{self._suffix}"
+
     def test_create_user(self):
-        uid = create_user("test_auth_user_1", "fakehash123")
+        uid = create_user(self._name("create_1"), "fakehash123")
         self.created_user_ids.append(uid)
         self.assertIsInstance(uid, int)
 
     def test_get_user_by_name(self):
-        uid = create_user("test_auth_user_2", "fakehash456")
+        name = self._name("byname_2")
+        uid = create_user(name, "fakehash456")
         self.created_user_ids.append(uid)
-        row = get_user_by_name("test_auth_user_2")
+        row = get_user_by_name(name)
         self.assertIsNotNone(row)
         self.assertEqual(row[0], uid)
-        self.assertEqual(row[1], "test_auth_user_2")
+        self.assertEqual(row[1], name)
         self.assertEqual(row[2], "fakehash456")
 
     def test_get_user_by_name_case_insensitive(self):
-        uid = create_user("TestCaseUser", "hash")
+        name = self._name("CaseTest")
+        uid = create_user(name, "hash")
         self.created_user_ids.append(uid)
-        row = get_user_by_name("testcaseuser")
+        row = get_user_by_name(name.lower())
         self.assertIsNotNone(row)
         self.assertEqual(row[0], uid)
 
@@ -65,32 +72,34 @@ class TestUserStore(unittest.TestCase):
         self.assertIsNone(row)
 
     def test_get_user_by_id(self):
-        uid = create_user("test_auth_user_3", "hash")
+        name = self._name("byid_3")
+        uid = create_user(name, "hash")
         self.created_user_ids.append(uid)
         row = get_user_by_id(uid)
         self.assertIsNotNone(row)
         self.assertEqual(row[0], uid)
-        self.assertEqual(row[1], "test_auth_user_3")
+        self.assertEqual(row[1], name)
 
     def test_get_user_by_id_missing(self):
         row = get_user_by_id(999888777)
         self.assertIsNone(row)
 
     def test_set_password(self):
-        uid = create_user("test_auth_user_4", "oldhash")
+        name = self._name("setpw_4")
+        uid = create_user(name, "oldhash")
         self.created_user_ids.append(uid)
         set_password(uid, "newhash")
-        row = get_user_by_name("test_auth_user_4")
+        row = get_user_by_name(name)
         self.assertEqual(row[2], "newhash")
 
     def test_get_session_owner(self):
-        uid = create_user("test_auth_user_5", "hash")
+        uid = create_user(self._name("owner_5"), "hash")
         self.created_user_ids.append(uid)
-        # Create a session
+        # Create a session (persona_id=NULL is OK)
         cur = self.conn.cursor()
         cur.execute(
-            "INSERT INTO chat_sessions (user_id, personality_id) VALUES (%s, %s) RETURNING id;",
-            (uid, "test"),
+            "INSERT INTO chat_sessions (user_id) VALUES (%s) RETURNING id;",
+            (uid,),
         )
         sid = cur.fetchone()[0]
         self.conn.commit()

@@ -57,12 +57,12 @@ from memory.context_builder import build_context
 from memory.vector_store import store_embedding
 from memory.emotion_store import store_emotion_vector
 from memory.persona_emotion_store import load_persona_emotion, save_persona_emotion
+from memory.persona_store import get_persona
 from memory.fact_store import store_fact
 from memory.topic_graph import create_topic_relation, link_all_topics, create_entity, link_entity_to_topic
 from memory.buffer import conversation_buffer
 from core.llm_client import call_llm
 from core.prompt_builder import build_system_prompt, build_message_list
-from agents.loader import load_persona_config
 from analysis.emotion_handler import EmotionVectorGenerator, PersonaEmotionEngine
 from analysis.knowledge_extractor import KnowledgeExtractor
 from tools.tool_call_parser import has_tool_calls, execute_tool_calls, ToolCallResult
@@ -78,7 +78,7 @@ _knowledge_extractor = KnowledgeExtractor()
 def run_conversation_turn(
     user_id: int,
     user_input: str,
-    personality_id: str = "girlfriend",
+    persona_id: int = None,
     session_id: int = None,
     nsfw_mode: bool = False,
     incognito: bool = False,
@@ -89,7 +89,7 @@ def run_conversation_turn(
     Args:
         user_id: the user's ID
         user_input: what the user said
-        personality_id: which persona to use
+        persona_id: numeric persona ID (from user_personalities table)
         session_id: optional existing session ID (will create/resume if None)
 
     Returns:
@@ -97,15 +97,18 @@ def run_conversation_turn(
                         user_emotions, emotion_description, extracted_knowledge, llm_raw
     """
 
-    # 1. Session management
+    # 1. Load persona config from DB
+    persona = get_persona(persona_id) if persona_id else None
+    if not persona:
+        raise ValueError(f"Persona {persona_id} not found")
+
+    # 2. Session management
     if session_id is None:
         session_id = get_last_session(user_id)
     if session_id is None:
-        session_id = start_chat_session(user_id, personality_id,
+        session_id = start_chat_session(user_id, persona_id,
                                         incognito=incognito, nsfw_mode=nsfw_mode)
 
-    # 2. Load persona config (needed for memory_scope)
-    persona = load_persona_config(personality_id)
     memory_scope = persona.get("memory_scope", None)
 
     # 3. Build memory context with tier filtering
@@ -117,7 +120,7 @@ def run_conversation_turn(
     user_emotion_tone = max(user_emotions, key=user_emotions.get, default="neutral")
 
     # 5. Load persona emotion state and update it
-    persona_state = load_persona_emotion(user_id, personality_id)
+    persona_state = load_persona_emotion(user_id, persona_id)
     current_persona_emotions = persona_state["emotions"]
     last_interaction = persona_state["last_updated"]
 
@@ -292,7 +295,7 @@ def run_conversation_turn(
         )
 
         # 14. Save updated persona emotions
-        save_persona_emotion(user_id, personality_id, new_persona_emotions)
+        save_persona_emotion(user_id, persona_id, new_persona_emotions)
 
         # 15. Knowledge extraction — extract from user input
         extracted = _knowledge_extractor.extract_all(user_input, role="user")
@@ -376,7 +379,7 @@ def _store_entity_in_graph(user_id: int, entity: dict):
 
 
 def process_input(user_input: str, session_id: str = None, user_id: int = 9999,
-                   personality_id: str = "girlfriend", nsfw_mode: bool = False,
+                   persona_id: int = None, nsfw_mode: bool = False,
                    incognito: bool = False) -> str:
     """
     Wrapper for router integration.
@@ -384,7 +387,7 @@ def process_input(user_input: str, session_id: str = None, user_id: int = 9999,
     result = run_conversation_turn(
         user_id=user_id,
         user_input=user_input,
-        personality_id=personality_id,
+        persona_id=persona_id,
         session_id=session_id,
         nsfw_mode=nsfw_mode,
         incognito=incognito,

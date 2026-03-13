@@ -5,6 +5,7 @@
 import unittest
 import os
 import psycopg2
+from psycopg2.extras import Json
 from dotenv import load_dotenv
 from memory.chat_store import (
     start_chat_session,
@@ -33,19 +34,31 @@ class TestChatStore(unittest.TestCase):
         cls.cur = cls.conn.cursor()
         cls.cur.execute("INSERT INTO users (name) VALUES (%s) RETURNING id;", ("TestChatUser",))
         cls.user_id = cls.cur.fetchone()[0]
+        # Create a test persona for FK references
+        cls.cur.execute("""
+            INSERT INTO user_personalities (user_id, slug, name, system_prompt, memory_scope)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING id;
+        """, (cls.user_id, "test_chat", "TestChatPersona", "You are a test bot.", Json({"tier1": True, "tier2": "all", "tier3": "private"})))
+        cls.persona_id = cls.cur.fetchone()[0]
         cls.conn.commit()
 
     @classmethod
     def tearDownClass(cls):
         cls.cur.execute("DELETE FROM chat_messages WHERE user_id = %s;", (cls.user_id,))
         cls.cur.execute("DELETE FROM chat_sessions WHERE user_id = %s;", (cls.user_id,))
+        cls.cur.execute("DELETE FROM user_personalities WHERE user_id = %s;", (cls.user_id,))
         cls.cur.execute("DELETE FROM users WHERE id = %s;", (cls.user_id,))
         cls.conn.commit()
         cls.cur.close()
         cls.conn.close()
 
     def test_start_chat_session(self):
-        session_id = start_chat_session(self.user_id, personality_id="TestPersona", context_summary="Test run.")
+        session_id = start_chat_session(self.user_id, persona_id=self.persona_id, context_summary="Test run.")
+        self.assertIsInstance(session_id, int)
+
+    def test_start_chat_session_no_persona(self):
+        session_id = start_chat_session(self.user_id)
         self.assertIsInstance(session_id, int)
 
     def test_get_chat_messages_empty(self):
@@ -83,19 +96,27 @@ class TestChatStore(unittest.TestCase):
         self.assertIsInstance(sessions, list)
 
     def test_list_sessions_contains_expected_keys(self):
-        start_chat_session(self.user_id, personality_id="test_persona")
+        start_chat_session(self.user_id, persona_id=self.persona_id)
         sessions = list_sessions(self.user_id)
         self.assertGreater(len(sessions), 0)
         s = sessions[0]
-        for key in ("id", "personality_id", "start_time", "message_count", "last_user_msg", "last_time"):
+        for key in ("id", "persona_id", "start_time", "message_count", "last_user_msg", "last_time"):
             self.assertIn(key, s)
 
+    def test_list_sessions_includes_persona_info(self):
+        """Sessions linked to a persona should include slug and name."""
+        sid = start_chat_session(self.user_id, persona_id=self.persona_id)
+        sessions = list_sessions(self.user_id)
+        found = [s for s in sessions if s["id"] == sid]
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0]["persona_slug"], "test_chat")
+        self.assertEqual(found[0]["persona_name"], "TestChatPersona")
+
     def test_list_sessions_with_messages(self):
-        sid = start_chat_session(self.user_id, personality_id="test_persona")
+        sid = start_chat_session(self.user_id, persona_id=self.persona_id)
         log_chat_message(sid, self.user_id, "user", "Hello from list_sessions test")
         log_chat_message(sid, self.user_id, "assistant", "Hi there")
         sessions = list_sessions(self.user_id)
-        # Find our session
         found = [s for s in sessions if s["id"] == sid]
         self.assertEqual(len(found), 1)
         self.assertEqual(found[0]["message_count"], 2)
@@ -103,7 +124,7 @@ class TestChatStore(unittest.TestCase):
 
     def test_list_sessions_respects_limit(self):
         for _ in range(3):
-            start_chat_session(self.user_id, personality_id="limit_test")
+            start_chat_session(self.user_id, persona_id=self.persona_id)
         sessions = list_sessions(self.user_id, limit=2)
         self.assertLessEqual(len(sessions), 2)
 
@@ -112,7 +133,7 @@ class TestChatStore(unittest.TestCase):
         self.assertEqual(sessions, [])
 
     def test_start_session_with_incognito(self):
-        sid = start_chat_session(self.user_id, personality_id="test", incognito=True)
+        sid = start_chat_session(self.user_id, persona_id=self.persona_id, incognito=True)
         self.assertIsInstance(sid, int)
         sessions = list_sessions(self.user_id)
         found = [s for s in sessions if s["id"] == sid]
@@ -120,7 +141,7 @@ class TestChatStore(unittest.TestCase):
         self.assertTrue(found[0]["incognito"])
 
     def test_start_session_with_nsfw_mode(self):
-        sid = start_chat_session(self.user_id, personality_id="test", nsfw_mode=True)
+        sid = start_chat_session(self.user_id, persona_id=self.persona_id, nsfw_mode=True)
         self.assertIsInstance(sid, int)
         sessions = list_sessions(self.user_id)
         found = [s for s in sessions if s["id"] == sid]
@@ -128,7 +149,7 @@ class TestChatStore(unittest.TestCase):
         self.assertTrue(found[0]["nsfw_mode"])
 
     def test_list_sessions_includes_new_flags(self):
-        sid = start_chat_session(self.user_id, personality_id="test",
+        sid = start_chat_session(self.user_id, persona_id=self.persona_id,
                                  incognito=True, nsfw_mode=True)
         sessions = list_sessions(self.user_id)
         found = [s for s in sessions if s["id"] == sid]
@@ -141,4 +162,3 @@ class TestChatStore(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
