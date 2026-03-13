@@ -30,6 +30,7 @@ Orchestrates a full conversation turn:
 10. Update buffer
 """
 
+import json
 import sys
 import os
 from dotenv import load_dotenv
@@ -64,6 +65,8 @@ from core.prompt_builder import build_system_prompt, build_message_list
 from agents.loader import load_persona_config
 from analysis.emotion_handler import EmotionVectorGenerator, PersonaEmotionEngine
 from analysis.knowledge_extractor import KnowledgeExtractor
+from tools.tool_call_parser import has_tool_calls, execute_tool_calls, ToolCallResult
+from tools.tool_registry import get_tool, get_tool_definitions
 
 
 # Module-level singletons
@@ -151,9 +154,94 @@ def run_conversation_turn(
         buffer_messages=buffer_msgs,
     )
 
-    # 9. Call LLM
-    response = call_llm(messages)
+    # 9. Call LLM (with tool definitions so it can autonomously use tools)
+    tool_defs = get_tool_definitions()
+    response = call_llm(messages, tools=tool_defs)
     assistant_reply = response["content"]
+
+    # 9a. Handle tool calls from the LLM response
+    tool_results = []
+    user_permission = persona.get("user_permission", "adult")
+
+    # Native tool calls (from /v1/chat/completions API)
+    if response.get("tool_calls"):
+        for tc in response["tool_calls"]:
+            func_info = tc.get("function", {})
+            tool_name = func_info.get("name", "")
+            try:
+                arguments = json.loads(func_info.get("arguments", "{}"))
+            except (json.JSONDecodeError, TypeError):
+                arguments = {}
+
+            tool_func = get_tool(tool_name)
+            if tool_func is None:
+                tool_results.append(ToolCallResult(
+                    tool_name=tool_name, arguments=arguments,
+                    success=False, error="Unknown tool: {}".format(tool_name),
+                ))
+                continue
+
+            # Inject execution context
+            arguments["user_id"] = user_id
+            arguments["user_permission"] = user_permission
+
+            try:
+                result = tool_func(**arguments)
+                display = ""
+                if tool_name == "generate_image" and isinstance(result, dict):
+                    if result.get("success") and result.get("images"):
+                        display = "[Image: {}]".format(", ".join(result["images"]))
+                tool_results.append(ToolCallResult(
+                    tool_name=tool_name, arguments=arguments,
+                    success=True, result=result, display_text=display,
+                ))
+            except Exception as e:
+                tool_results.append(ToolCallResult(
+                    tool_name=tool_name, arguments=arguments,
+                    success=False, error=str(e),
+                ))
+
+        # Feed tool results back to the model for a natural text response
+        # Build tool result messages in OpenAI format
+        tool_result_msgs = []
+        # Add the assistant's tool-call message
+        tool_call_msg = {
+            "role": "assistant",
+            "content": assistant_reply or None,
+            "tool_calls": response["tool_calls"],
+        }
+        tool_result_msgs.append(tool_call_msg)
+
+        # Add tool results
+        for tc, tr in zip(response["tool_calls"], tool_results):
+            if tr.success:
+                result_text = tr.display_text or "Tool executed successfully."
+            else:
+                result_text = "Tool failed: {}".format(tr.error)
+            tool_result_msgs.append({
+                "role": "tool",
+                "tool_call_id": tc.get("id", ""),
+                "content": result_text,
+            })
+
+        # Second LLM call: model sees the tool results and produces a natural reply
+        followup_messages = messages + tool_result_msgs
+        followup = call_llm(followup_messages, tools=tool_defs)
+        assistant_reply = followup["content"].strip()
+
+        # Append image paths so the interface can display them
+        tool_display = " ".join(tr.display_text for tr in tool_results if tr.display_text)
+        if tool_display:
+            assistant_reply = (assistant_reply + "\n" + tool_display).strip()
+
+    # Fallback: parse <tool_call> tags from text (for models that use text-based tool calls)
+    elif has_tool_calls(assistant_reply):
+        assistant_reply, tool_results = execute_tool_calls(
+            response_text=assistant_reply,
+            tool_getter=get_tool,
+            user_id=user_id,
+            user_permission=user_permission,
+        )
 
     # 10. Persist user message
     message_id = log_chat_message(
@@ -247,6 +335,7 @@ def run_conversation_turn(
         "user_emotions": user_emotions,
         "emotion_description": emotion_description,
         "extracted_knowledge": extracted,
+        "tool_results": tool_results,
         "llm_raw": response.get("raw"),
     }
 

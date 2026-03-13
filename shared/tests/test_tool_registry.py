@@ -33,7 +33,7 @@ class TestToolRegistry(unittest.TestCase):
         desc = tool_registry.describe_tools()
         self.assertIsInstance(desc, dict)
         self.assertIn("generate_image", desc)
-        self.assertIn("Creates an image", desc["generate_image"])
+        self.assertIn("image", desc["generate_image"].lower())
 
 if __name__ == "__main__":
     unittest.main()

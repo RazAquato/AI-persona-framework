@@ -8,55 +8,101 @@
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-# shared/tools/tool_registry.py
-import os, sys
-# Add shared to path
+"""
+Tool Registry
+-------------
+Central registry of tools available to both the router (user /commands)
+and the LLM (autonomous tool calls via <tool_call> blocks).
+
+Each tool has:
+- A callable function
+- A JSON schema definition (for injection into the LLM system prompt)
+"""
+
+import os
+import sys
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-# Add LLM-client to path so we can import `core.engine`
 ROOT = os.path.abspath(os.path.join(BASE_DIR, "..", ".."))
-sys.path.append(ROOT)
+if ROOT not in sys.path:
+    sys.path.append(ROOT)
 
-# Import all tool modules
-from shared.tools import image_gen #, web_research, sandbox_env
+from shared.tools import image_gen
 
-# Define a registry of available tools
-# Map: command name (str) → callable function
+# ──────────────────────────────────────────────────────────────
+# Tool function registry: command name → callable
+# ──────────────────────────────────────────────────────────────
 TOOLS = {
     "generate_image": image_gen.generate,
-    #"web_search": web_research.search_web,
-    #"run_code": sandbox_env.run_code,
-    #"generate_chart": plot_chart.generate
 }
 
+# ──────────────────────────────────────────────────────────────
+# Tool definitions for LLM (Qwen/OpenAI function-calling format)
+# The LLM sees these in the system prompt to know what it can call.
+# user_id and user_permission are injected by the engine at execution
+# time — the LLM never needs to specify them.
+# ──────────────────────────────────────────────────────────────
+TOOL_DEFINITIONS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "generate_image",
+            "description": (
+                "Generate an image from a text description using AI image generation. "
+                "Use this to create visual gifts, illustrate scenes, or share images "
+                "in conversation. The image will be generated and shown to the user."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "prompt": {
+                        "type": "string",
+                        "description": (
+                            "Detailed description of the image to generate. "
+                            "Be specific about subject, style, mood, and composition."
+                        ),
+                    },
+                    "negative_prompt": {
+                        "type": "string",
+                        "description": "What to avoid in the image (optional).",
+                    },
+                },
+                "required": ["prompt"],
+            },
+        },
+    },
+]
+
+
 def get_tool(tool_name: str):
-    """
-    Get the callable function for a tool by name.
-    Returns None if tool is not registered.
-    """
+    """Get the callable function for a tool by name. Returns None if not found."""
     return TOOLS.get(tool_name)
 
+
 def list_tools():
-    """
-    Returns a list of all registered tool names.
-    """
+    """Returns a list of all registered tool names."""
     return list(TOOLS.keys())
 
-def describe_tools():
+
+def get_tool_definitions() -> list:
     """
-    Returns a dict of tool names and descriptions.
-    Used by LLM to understand tool capabilities.
+    Returns the tool definitions list for injection into the LLM prompt.
+    Format matches Qwen/OpenAI function-calling schema.
+    """
+    return TOOL_DEFINITIONS
+
+
+def describe_tools() -> dict:
+    """
+    Returns a dict of tool names → human-readable descriptions.
     """
     return {
-        "generate_image": "Creates an image from a text prompt via ComfyUI. "
-                          "Accepts: prompt (str), user_id (int), user_permission (str), "
-                          "width (int), height (int), seed (int), negative_prompt (str), "
-                          "workflow (str). Returns dict with success, images, error.",
+        defn["function"]["name"]: defn["function"]["description"]
+        for defn in TOOL_DEFINITIONS
     }
-

@@ -17,9 +17,6 @@
 # LLM-client/core/router.py
 import os, re, sys
 
-#from shared.tools import tool_registry
-#from core import engine
-
 # Add memory-server to path
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -38,19 +35,30 @@ import tool_registry
 # Config toggle: if True, tool failure messages go into the LLM
 TOOL_FAILURES_GO_TO_LLM = False
 
+# User-friendly command aliases -> registry tool names
+COMMAND_ALIASES = {
+    "image": "generate_image",
+    "img": "generate_image",
+}
+
+
 def is_tool_command(user_input: str):
     return user_input.strip().startswith("/")
 
+
 def parse_tool_command(user_input: str):
     """
-    NOTE: we need better parsing, this is just a skeleton-code!
-    Parses inputs like: /generate_image "cat with hat"
+    Parses inputs like: /generate_image "cat with hat" or /image a sunset
     Returns: ("generate_image", "cat with hat")
     """
-    match = re.match(r'^/(\w+)\s*["“]?(.*?)["”]?$', user_input.strip())
+    match = re.match(r'^/(\w+)\s*["\u201c]?(.*?)["\u201d]?$', user_input.strip())
     if match:
-        return match.group(1), match.group(2)
+        command = match.group(1)
+        # Resolve aliases
+        command = COMMAND_ALIASES.get(command, command)
+        return command, match.group(2)
     return None, None
+
 
 def handle_user_input(user_input: str, session_id: str = None):
     """
@@ -72,28 +80,27 @@ def handle_user_input(user_input: str, session_id: str = None):
                     elif "images" in result:
                         if result.get("success"):
                             imgs = ", ".join(result["images"]) if result["images"] else "no output"
-                            return f"✅ Image generated: {imgs}"
+                            return "Image generated: " + imgs
                         else:
-                            return f"⚠️ Image generation failed: {result.get('error', 'unknown error')}"
+                            return "Image generation failed: " + result.get("error", "unknown error")
                     else:
-                        return f"✅ Tool executed: {result}"
+                        return "Tool executed: " + str(result)
                 else:
-                    return "✅ Tool executed, but no readable output was returned."
+                    return "Tool executed, but no readable output was returned."
             except Exception as e:
-                error_msg = f"⚠️ Tool '{command}' failed to execute."
-                print(f"[router] Tool error: {e}")
+                error_msg = "Tool '{}' failed to execute.".format(command)
+                print("[router] Tool error: {}".format(e))
                 if TOOL_FAILURES_GO_TO_LLM:
-                    user_input = f"{user_input}\n[NOTE: Tool '{command}' failed to run.]"
+                    user_input = "{}\n[NOTE: Tool '{}' failed to run.]".format(user_input, command)
                 else:
                     return error_msg
         else:
-            error_msg = f"❌ Tool '{command}' not found."
+            error_msg = "Tool '{}' not found.".format(command)
             if TOOL_FAILURES_GO_TO_LLM:
-                user_input = f"{user_input}\n[NOTE: Tool '{command}' is not available.]"
+                user_input = "{}\n[NOTE: Tool '{}' is not available.]".format(user_input, command)
             else:
                 return error_msg
 
     # Fallback: call LLM engine
     response = engine.process_input(user_input, session_id=session_id)
     return response
-

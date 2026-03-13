@@ -42,6 +42,14 @@ for p in [LLM_CLIENT_ROOT, MEMORY_PATH, SHARED_PATH]:
         sys.path.append(p)
 
 from core.engine import run_conversation_turn
+from core.router import is_tool_command, parse_tool_command
+import re
+
+# Add shared tools to path
+TOOLS_PATH = os.path.abspath(os.path.join(BASE_DIR, "..", "..", "shared", "tools"))
+if TOOLS_PATH not in sys.path:
+    sys.path.append(TOOLS_PATH)
+import tool_registry
 
 
 def format_emotions(emotions: dict, top_n: int = 5) -> str:
@@ -100,6 +108,25 @@ def main():
             print(f"  [User emotion display: {'ON' if show_user_emotions else 'OFF'}]")
             continue
 
+        # Handle /commands directly via tool registry
+        if is_tool_command(user_input):
+            command, prompt = parse_tool_command(user_input)
+            tool_func = tool_registry.get_tool(command)
+            if tool_func:
+                try:
+                    result = tool_func(prompt, user_id=user_id, user_permission="adult")
+                    if isinstance(result, dict) and result.get("success") and result.get("images"):
+                        print(f"\n  Image generated: {', '.join(result['images'])}\n")
+                    elif isinstance(result, dict) and not result.get("success"):
+                        print(f"\n  Failed: {result.get('error', 'unknown error')}\n")
+                    else:
+                        print(f"\n  Tool result: {result}\n")
+                except Exception as e:
+                    print(f"\n  [ERROR] Tool failed: {e}\n")
+            else:
+                print(f"\n  Unknown command: {command}\n")
+            continue
+
         try:
             result = run_conversation_turn(
                 user_id=user_id,
@@ -111,8 +138,12 @@ def main():
             # Capture session_id for subsequent turns
             session_id = result["session_id"]
 
+            # Strip <think>...</think> blocks from the reply
+            reply = result['assistant_reply']
+            reply = re.sub(r'<think>.*?</think>\s*', '', reply, flags=re.DOTALL).strip()
+
             # Print reply
-            print(f"\n{persona_name.capitalize()}: {result['assistant_reply']}\n")
+            print(f"\n{persona_name.capitalize()}: {reply}\n")
 
             # Show emotions if enabled
             if show_emotions and result.get("persona_emotions"):
