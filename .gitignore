@@ -45,3 +45,6 @@ data/echo_corpus/
 data/**/*.jsonl
 data/**/*.dump
 comfyui/
+
+# Archived dead code
+archive/
