@@ -49,7 +49,7 @@ DEFAULT_MEMORY_SCOPE = {
 }
 
 
-def load_persona_config(personality_id: str = "default") -> dict:
+def load_persona_config(personality_id: str = "girlfriend") -> dict:
     """
     Load configuration for a given personality.
     Returns a dictionary with fields like:
@@ -71,9 +71,9 @@ def load_persona_config(personality_id: str = "default") -> dict:
         if personality_id in all_configs:
             config = all_configs[personality_id]
         else:
-            print(f"[loader] Personality '{personality_id}' not found. Falling back to 'default'.")
-            config = all_configs.get("default", {
-                "name": "Default",
+            print(f"[loader] Personality '{personality_id}' not found. Falling back to 'girlfriend'.")
+            config = all_configs.get("girlfriend", {
+                "name": "Eva",
                 "system_prompt": "You are a helpful assistant."
             })
 
@@ -88,7 +88,7 @@ def load_persona_config(personality_id: str = "default") -> dict:
 
 
 def _ensure_memory_scope(config: dict) -> dict:
-    """Ensure memory_scope exists and has valid structure."""
+    """Ensure memory_scope and other required fields exist with valid defaults."""
     if "memory_scope" not in config:
         config["memory_scope"] = dict(DEFAULT_MEMORY_SCOPE)
     else:
@@ -99,5 +99,7 @@ def _ensure_memory_scope(config: dict) -> dict:
             scope["tier2"] = "all"
         if "tier3" not in scope:
             scope["tier3"] = "private"
+    if "nsfw_capable" not in config:
+        config["nsfw_capable"] = False
     return config
 

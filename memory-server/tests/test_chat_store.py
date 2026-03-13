@@ -111,6 +111,33 @@ class TestChatStore(unittest.TestCase):
         sessions = list_sessions(999999)
         self.assertEqual(sessions, [])
 
+    def test_start_session_with_incognito(self):
+        sid = start_chat_session(self.user_id, personality_id="test", incognito=True)
+        self.assertIsInstance(sid, int)
+        sessions = list_sessions(self.user_id)
+        found = [s for s in sessions if s["id"] == sid]
+        self.assertEqual(len(found), 1)
+        self.assertTrue(found[0]["incognito"])
+
+    def test_start_session_with_nsfw_mode(self):
+        sid = start_chat_session(self.user_id, personality_id="test", nsfw_mode=True)
+        self.assertIsInstance(sid, int)
+        sessions = list_sessions(self.user_id)
+        found = [s for s in sessions if s["id"] == sid]
+        self.assertEqual(len(found), 1)
+        self.assertTrue(found[0]["nsfw_mode"])
+
+    def test_list_sessions_includes_new_flags(self):
+        sid = start_chat_session(self.user_id, personality_id="test",
+                                 incognito=True, nsfw_mode=True)
+        sessions = list_sessions(self.user_id)
+        found = [s for s in sessions if s["id"] == sid]
+        self.assertEqual(len(found), 1)
+        self.assertIn("incognito", found[0])
+        self.assertIn("nsfw_mode", found[0])
+        self.assertTrue(found[0]["incognito"])
+        self.assertTrue(found[0]["nsfw_mode"])
+
 
 if __name__ == "__main__":
     unittest.main()

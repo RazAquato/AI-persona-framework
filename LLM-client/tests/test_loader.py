@@ -1,21 +1,8 @@
 # AI-persona-framework
 # Copyright (C) 2025 Kenneth Haider
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program. If not, see <https://www.gnu.org/licenses/>.
+# GPLv3 License - See <https://www.gnu.org/licenses/>
 
 import unittest
-import os
 import json
 from unittest.mock import patch, mock_open
 from agents import loader
@@ -25,13 +12,16 @@ class TestPersonaLoader(unittest.TestCase):
 
     def setUp(self):
         self.mock_config = {
-            "default": {
+            "girlfriend": {
                 "name": "Eva",
-                "system_prompt": "You are Eva, a poetic and thoughtful assistant..."
+                "system_prompt": "You are Eva, an affectionate companion...",
+                "nsfw_capable": True,
+                "nsfw_system_prompt_addon": "You follow creative direction.",
             },
-            "friendly": {
-                "name": "Bob",
-                "system_prompt": "You are Bob, a cheerful and curious assistant."
+            "debug": {
+                "name": "DebugBot",
+                "system_prompt": "You are DebugBot.",
+                "nsfw_capable": False,
             }
         }
 
@@ -39,13 +29,12 @@ class TestPersonaLoader(unittest.TestCase):
     @patch("agents.loader.CONFIG_PATH", "mock/path/personality_config.json")
     def test_load_existing_personality(self, mock_file):
         mock_file().read.return_value = json.dumps(self.mock_config)
-        result = loader.load_persona_config("friendly")
-        self.assertEqual(result["name"], "Bob")
-        self.assertIn("cheerful", result["system_prompt"])
+        result = loader.load_persona_config("debug")
+        self.assertEqual(result["name"], "DebugBot")
 
     @patch("builtins.open", new_callable=mock_open)
     @patch("agents.loader.CONFIG_PATH", "mock/path/personality_config.json")
-    def test_load_fallback_to_default(self, mock_file):
+    def test_load_fallback_to_girlfriend(self, mock_file):
         mock_file().read.return_value = json.dumps(self.mock_config)
         result = loader.load_persona_config("nonexistent")
         self.assertEqual(result["name"], "Eva")
@@ -56,14 +45,11 @@ class TestPersonaLoader(unittest.TestCase):
         self.assertEqual(result["name"], "Fallback")
         self.assertIn("helpful", result["system_prompt"])
 
-    # --- M2 additions: memory_scope ---
-
     @patch("builtins.open", new_callable=mock_open)
     @patch("agents.loader.CONFIG_PATH", "mock/path/personality_config.json")
     def test_memory_scope_default_added(self, mock_file):
-        """Personas without memory_scope get default scope injected."""
         mock_file().read.return_value = json.dumps(self.mock_config)
-        result = loader.load_persona_config("default")
+        result = loader.load_persona_config("girlfriend")
         self.assertIn("memory_scope", result)
         self.assertTrue(result["memory_scope"]["tier1"])
         self.assertEqual(result["memory_scope"]["tier2"], "all")
@@ -72,7 +58,6 @@ class TestPersonaLoader(unittest.TestCase):
     @patch("builtins.open", new_callable=mock_open)
     @patch("agents.loader.CONFIG_PATH", "mock/path/personality_config.json")
     def test_memory_scope_preserved_if_present(self, mock_file):
-        """Existing memory_scope in config is preserved."""
         config_with_scope = {
             "debug": {
                 "name": "DebugBot",
@@ -87,7 +72,6 @@ class TestPersonaLoader(unittest.TestCase):
     @patch("builtins.open", new_callable=mock_open)
     @patch("agents.loader.CONFIG_PATH", "mock/path/personality_config.json")
     def test_memory_scope_partial_filled(self, mock_file):
-        """Partial memory_scope gets missing fields filled in."""
         config_partial = {
             "partial": {
                 "name": "Partial",
@@ -102,12 +86,38 @@ class TestPersonaLoader(unittest.TestCase):
 
     @patch("agents.loader.CONFIG_PATH", "invalid/path/config.json")
     def test_fallback_has_memory_scope(self):
-        """Even the error fallback should have memory_scope."""
         result = loader.load_persona_config("any")
         self.assertIn("memory_scope", result)
         self.assertTrue(result["memory_scope"]["tier1"])
 
+    @patch("builtins.open", new_callable=mock_open)
+    @patch("agents.loader.CONFIG_PATH", "mock/path/personality_config.json")
+    def test_nsfw_capable_default_false(self, mock_file):
+        config_no_nsfw = {
+            "plain": {
+                "name": "Plain",
+                "system_prompt": "Plain assistant.",
+            }
+        }
+        mock_file().read.return_value = json.dumps(config_no_nsfw)
+        result = loader.load_persona_config("plain")
+        self.assertFalse(result["nsfw_capable"])
+
+    @patch("builtins.open", new_callable=mock_open)
+    @patch("agents.loader.CONFIG_PATH", "mock/path/personality_config.json")
+    def test_nsfw_capable_preserved(self, mock_file):
+        mock_file().read.return_value = json.dumps(self.mock_config)
+        result = loader.load_persona_config("girlfriend")
+        self.assertTrue(result["nsfw_capable"])
+
+    @patch("builtins.open", new_callable=mock_open)
+    @patch("agents.loader.CONFIG_PATH", "mock/path/personality_config.json")
+    def test_nsfw_system_prompt_addon_preserved(self, mock_file):
+        mock_file().read.return_value = json.dumps(self.mock_config)
+        result = loader.load_persona_config("girlfriend")
+        self.assertIn("nsfw_system_prompt_addon", result)
+        self.assertIn("creative direction", result["nsfw_system_prompt_addon"])
+
 
 if __name__ == "__main__":
     unittest.main()
-

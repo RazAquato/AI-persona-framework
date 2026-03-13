@@ -31,6 +31,7 @@ def build_system_prompt(
     facts: list = None,
     similar_memories: list = None,
     related_topics: list = None,
+    nsfw_mode: bool = False,
 ) -> str:
     """
     Assemble the system prompt from persona config + memory layers + emotion state.
@@ -49,6 +50,8 @@ def build_system_prompt(
 
     # 1. Core persona identity
     base_prompt = persona.get("system_prompt", "You are a helpful assistant.")
+    if nsfw_mode and persona.get("nsfw_system_prompt_addon"):
+        base_prompt += "\n" + persona["nsfw_system_prompt_addon"]
     parts.append(base_prompt)
 
     # 2. Persona's current emotional state

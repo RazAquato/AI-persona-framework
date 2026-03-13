@@ -78,8 +78,10 @@ _knowledge_extractor = KnowledgeExtractor()
 def run_conversation_turn(
     user_id: int,
     user_input: str,
-    personality_id: str = "default",
+    personality_id: str = "girlfriend",
     session_id: int = None,
+    nsfw_mode: bool = False,
+    incognito: bool = False,
 ) -> dict:
     """
     Execute one full conversation turn.
@@ -99,7 +101,8 @@ def run_conversation_turn(
     if session_id is None:
         session_id = get_last_session(user_id)
     if session_id is None:
-        session_id = start_chat_session(user_id, personality_id)
+        session_id = start_chat_session(user_id, personality_id,
+                                        incognito=incognito, nsfw_mode=nsfw_mode)
 
     # 2. Load persona config (needed for memory_scope)
     persona = load_persona_config(personality_id)
@@ -135,6 +138,7 @@ def run_conversation_turn(
         facts=context["facts"],
         similar_memories=context["vectors"],
         related_topics=context["topics"],
+        nsfw_mode=nsfw_mode,
     )
 
     # 7. Get chat history — use buffer for recent, DB for older
@@ -161,7 +165,10 @@ def run_conversation_turn(
 
     # 9a. Handle tool calls from the LLM response
     tool_results = []
-    user_permission = persona.get("user_permission", "adult")
+    if nsfw_mode and persona.get("nsfw_capable"):
+        user_permission = "adult"
+    else:
+        user_permission = persona.get("user_permission", "adult")
 
     # Native tool calls (from /v1/chat/completions API)
     if response.get("tool_calls"):
@@ -243,84 +250,89 @@ def run_conversation_turn(
             user_permission=user_permission,
         )
 
-    # 10. Persist user message
-    message_id = log_chat_message(
-        session_id=session_id,
-        user_id=user_id,
-        role="user",
-        content=user_input,
-        embedding=embedded_input,
-        sentiment=None,
-        topics=[],
-    )
+    # 10-15. Persist everything (skipped in incognito mode)
+    message_id = None
+    extracted = {"facts": [], "entities": [], "topics": []}
 
-    # 11. Store user emotion vector
-    store_emotion_vector(message_id, user_emotions, tone=user_emotion_tone)
-
-    # 12. Store embedding in Qdrant for future semantic search
-    store_embedding(
-        vector=embedded_input,
-        metadata={
-            "user_id": user_id,
-            "session_id": session_id,
-            "text": user_input,
-            "role": "user",
-        },
-    )
-
-    # 13. Persist assistant message
-    log_chat_message(
-        session_id=session_id,
-        user_id=user_id,
-        role="assistant",
-        content=assistant_reply,
-        embedding=None,
-        sentiment=None,
-        topics=[],
-    )
-
-    # 14. Save updated persona emotions
-    save_persona_emotion(user_id, personality_id, new_persona_emotions)
-
-    # 15. Knowledge extraction — extract from user input
-    extracted = _knowledge_extractor.extract_all(user_input, role="user")
-
-    # 15a. Store extracted facts
-    for fact in extracted["facts"]:
-        store_fact(
+    if not incognito:
+        # 10. Persist user message
+        message_id = log_chat_message(
+            session_id=session_id,
             user_id=user_id,
-            fact=fact["text"],
-            tags=fact.get("tags", []),
-            relevance_score=fact.get("confidence", 0.5),
-            source_type="conversation",
-            source_ref=str(message_id),
-            tier=fact.get("tier", "knowledge"),
-            entity_type=fact.get("entity_type"),
+            role="user",
+            content=user_input,
+            embedding=embedded_input,
+            sentiment=None,
+            topics=[],
         )
 
-    # 15b. Store extracted entities as facts AND in Neo4j
-    for entity in extracted["entities"]:
-        store_fact(
-            user_id=user_id,
-            fact=entity["text"],
-            tags=entity.get("tags", []),
-            relevance_score=entity.get("confidence", 0.5),
-            source_type="conversation",
-            source_ref=str(message_id),
-            tier=entity.get("tier", "knowledge"),
-            entity_type=entity.get("entity_type"),
+        # 11. Store user emotion vector
+        store_emotion_vector(message_id, user_emotions, tone=user_emotion_tone)
+
+        # 12. Store embedding in Qdrant for future semantic search
+        store_embedding(
+            vector=embedded_input,
+            metadata={
+                "user_id": user_id,
+                "session_id": session_id,
+                "text": user_input,
+                "role": "user",
+            },
         )
-        # Extract entity name from the fact text for Neo4j
-        _store_entity_in_graph(user_id, entity)
 
-    # 15c. Populate topic graph
-    topic_names = [t["topic"] for t in extracted["topics"]]
-    for topic_info in extracted["topics"]:
-        create_topic_relation(user_id, topic_info["topic"])
+        # 13. Persist assistant message
+        log_chat_message(
+            session_id=session_id,
+            user_id=user_id,
+            role="assistant",
+            content=assistant_reply,
+            embedding=None,
+            sentiment=None,
+            topics=[],
+        )
 
-    # 15d. Cross-link topics that appeared in the same message
-    if len(topic_names) >= 2:
-        link_all_topics(topic_names)
+        # 14. Save updated persona emotions
+        save_persona_emotion(user_id, personality_id, new_persona_emotions)
+
+        # 15. Knowledge extraction — extract from user input
+        extracted = _knowledge_extractor.extract_all(user_input, role="user")
+
+        # 15a. Store extracted facts
+        for fact in extracted["facts"]:
+            store_fact(
+                user_id=user_id,
+                fact=fact["text"],
+                tags=fact.get("tags", []),
+                relevance_score=fact.get("confidence", 0.5),
+                source_type="conversation",
+                source_ref=str(message_id),
+                tier=fact.get("tier", "knowledge"),
+                entity_type=fact.get("entity_type"),
+            )
+
+        # 15b. Store extracted entities as facts AND in Neo4j
+        for entity in extracted["entities"]:
+            store_fact(
+                user_id=user_id,
+                fact=entity["text"],
+                tags=entity.get("tags", []),
+                relevance_score=entity.get("confidence", 0.5),
+                source_type="conversation",
+                source_ref=str(message_id),
+                tier=entity.get("tier", "knowledge"),
+                entity_type=entity.get("entity_type"),
+            )
+            # Extract entity name from the fact text for Neo4j
+            _store_entity_in_graph(user_id, entity)
+
+        # 15c. Populate topic graph
+        topic_names = [t["topic"] for t in extracted["topics"]]
+        for topic_info in extracted["topics"]:
+            create_topic_relation(user_id, topic_info["topic"])
+
+        # 15d. Cross-link topics that appeared in the same message
+        if len(topic_names) >= 2:
+            link_all_topics(topic_names)
 
     # 16. Update conversation buffer
     conversation_buffer.add_message(user_id, session_id, "user", user_input)
@@ -336,6 +348,8 @@ def run_conversation_turn(
         "emotion_description": emotion_description,
         "extracted_knowledge": extracted,
         "tool_results": tool_results,
+        "incognito": incognito,
+        "nsfw_mode": nsfw_mode,
         "llm_raw": response.get("raw"),
     }
 
@@ -362,7 +376,8 @@ def _store_entity_in_graph(user_id: int, entity: dict):
 
 
 def process_input(user_input: str, session_id: str = None, user_id: int = 9999,
-                   personality_id: str = "default") -> str:
+                   personality_id: str = "girlfriend", nsfw_mode: bool = False,
+                   incognito: bool = False) -> str:
     """
     Wrapper for router integration.
     """
@@ -371,5 +386,7 @@ def process_input(user_input: str, session_id: str = None, user_id: int = 9999,
         user_input=user_input,
         personality_id=personality_id,
         session_id=session_id,
+        nsfw_mode=nsfw_mode,
+        incognito=incognito,
     )
     return result.get("assistant_reply", "[No reply generated]")

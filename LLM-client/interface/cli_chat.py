@@ -67,10 +67,12 @@ def format_emotions(emotions: dict, top_n: int = 5) -> str:
 
 def main():
     parser = argparse.ArgumentParser(description="AI Persona CLI Chat")
-    parser.add_argument("--persona", default="default", help="Personality ID (default, eva, eva-nsfw, debug)")
+    parser.add_argument("--persona", default="girlfriend", help="Personality ID (girlfriend, trainer, psychiatrist, debug)")
     parser.add_argument("--user", type=int, default=9999, help="User ID (default: 9999 test user)")
     parser.add_argument("--show-emotions", action="store_true", help="Show persona emotion state each turn")
     parser.add_argument("--show-user-emotions", action="store_true", help="Show detected user emotions each turn")
+    parser.add_argument("--incognito", action="store_true", help="Incognito mode: no data saved to DB")
+    parser.add_argument("--nsfw", action="store_true", help="Enable NSFW mode (requires nsfw_capable persona)")
     args = parser.parse_args()
 
     persona_name = args.persona
@@ -79,6 +81,10 @@ def main():
 
     print(f"--- AI Persona Chat ---")
     print(f"Persona: {persona_name} | User ID: {user_id}")
+    if args.incognito:
+        print("  [INCOGNITO MODE - no data will be saved]")
+    if args.nsfw:
+        print("  [NSFW MODE enabled]")
     print(f"Type 'quit' or 'exit' to end. Type '/emotions' to toggle emotion display.\n")
 
     show_emotions = args.show_emotions
@@ -133,6 +139,8 @@ def main():
                 user_input=user_input,
                 personality_id=persona_name,
                 session_id=session_id,
+                nsfw_mode=args.nsfw,
+                incognito=args.incognito,
             )
 
             # Capture session_id for subsequent turns

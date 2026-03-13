@@ -79,7 +79,8 @@ class ChatRequest(BaseModel):
     user_id: int = 9999
     persona: str = "girlfriend"
     session_id: Optional[int] = None
-    user_permission: str = "adult"
+    nsfw_mode: bool = False
+    incognito: bool = False
 
 
 class ChatResponse(BaseModel):
@@ -88,6 +89,8 @@ class ChatResponse(BaseModel):
     session_id: Optional[int] = None
     persona_emotions: Optional[dict] = None
     emotion_description: Optional[str] = None
+    incognito: bool = False
+    nsfw_mode: bool = False
 
 
 @app.post("/chat", response_model=ChatResponse)
@@ -104,10 +107,11 @@ async def chat(req: ChatRequest):
 
         if tool_func:
             try:
+                user_perm = "adult" if req.nsfw_mode else "adult"
                 result = tool_func(
                     prompt,
                     user_id=req.user_id,
-                    user_permission=req.user_permission,
+                    user_permission=user_perm,
                 )
                 if isinstance(result, dict):
                     images = result.get("images", [])
@@ -132,6 +136,8 @@ async def chat(req: ChatRequest):
         user_input=user_input,
         personality_id=req.persona,
         session_id=req.session_id,
+        nsfw_mode=req.nsfw_mode,
+        incognito=req.incognito,
     )
 
     reply = result.get("assistant_reply", "")
@@ -150,6 +156,8 @@ async def chat(req: ChatRequest):
         session_id=result.get("session_id"),
         persona_emotions=result.get("persona_emotions"),
         emotion_description=result.get("emotion_description"),
+        incognito=result.get("incognito", False),
+        nsfw_mode=result.get("nsfw_mode", False),
     )
 
 
@@ -203,6 +211,7 @@ async def personas():
         result[pid] = {
             "name": cfg.get("name", pid),
             "description": cfg.get("description", ""),
+            "nsfw_capable": cfg.get("nsfw_capable", False),
         }
     return {"personas": result}
 
@@ -223,13 +232,17 @@ async def sessions(user_id: int = Query(default=9999)):
 class NewSessionRequest(BaseModel):
     user_id: int = 9999
     persona: str = "girlfriend"
+    nsfw_mode: bool = False
+    incognito: bool = False
 
 
 @app.post("/sessions/new")
 async def new_session(req: NewSessionRequest):
     """Create a new chat session."""
-    sid = start_chat_session(req.user_id, req.persona)
-    return {"session_id": sid, "persona": req.persona}
+    sid = start_chat_session(req.user_id, req.persona,
+                             incognito=req.incognito, nsfw_mode=req.nsfw_mode)
+    return {"session_id": sid, "persona": req.persona,
+            "incognito": req.incognito, "nsfw_mode": req.nsfw_mode}
 
 
 @app.get("/sessions/{session_id}/messages")
@@ -269,6 +282,10 @@ CHAT_HTML = """<!DOCTYPE html>
   #persona-select:focus { outline: none; border-color: #6a6aaa; }
   #new-chat-btn { width: 100%; margin-top: 10px; padding: 10px; background: #4a4a8a; border: none; border-radius: 6px; color: #eee; font-size: 14px; cursor: pointer; }
   #new-chat-btn:hover { background: #5a5a9a; }
+  .toggle-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 13px; color: #aab; }
+  .toggle-row label { cursor: pointer; user-select: none; }
+  .toggle-row input[type="checkbox"] { accent-color: #6a6aaa; cursor: pointer; }
+  .toggle-row.hidden { display: none; }
 
   #session-list { flex: 1; overflow-y: auto; padding: 8px; }
   .persona-group { margin-bottom: 12px; }
@@ -278,6 +295,10 @@ CHAT_HTML = """<!DOCTYPE html>
   .session-item.active { background: #2a2a5a; }
   .session-item .session-preview { color: #999; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
   .session-item .session-meta { color: #556; font-size: 11px; margin-top: 2px; }
+  .session-item.incognito { opacity: 0.6; border-left: 2px solid #665; }
+  .badge { font-size: 10px; padding: 1px 5px; border-radius: 3px; margin-left: 4px; }
+  .badge.incognito { background: #443; color: #aa9; }
+  .badge.nsfw { background: #533; color: #c99; }
 
   /* Main chat area */
   #main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
@@ -310,6 +331,14 @@ CHAT_HTML = """<!DOCTYPE html>
   <div id="sidebar-header">
     <h2>Personas</h2>
     <select id="persona-select" onchange="onPersonaChange()"></select>
+    <div class="toggle-row" id="nsfw-toggle-row">
+      <input type="checkbox" id="nsfw-toggle">
+      <label for="nsfw-toggle">NSFW mode</label>
+    </div>
+    <div class="toggle-row">
+      <input type="checkbox" id="incognito-toggle">
+      <label for="incognito-toggle">Incognito</label>
+    </div>
     <button id="new-chat-btn" onclick="newChat()">+ New Chat</button>
   </div>
   <div id="session-list"></div>
@@ -339,10 +368,15 @@ const sessionListEl = document.getElementById('session-list');
 const headerPersona = document.getElementById('header-persona');
 const headerEmotion = document.getElementById('header-emotion');
 const headerModel = document.getElementById('header-model');
+const nsfwToggle = document.getElementById('nsfw-toggle');
+const nsfwToggleRow = document.getElementById('nsfw-toggle-row');
+const incognitoToggle = document.getElementById('incognito-toggle');
 
 const USER_ID = 9999;
 let sessionId = null;
 let currentPersona = 'girlfriend';
+let sessionNsfw = false;
+let sessionIncognito = false;
 let personas = {};
 let allSessions = {};
 
@@ -383,6 +417,7 @@ async function loadPersonas() {
     if (pid === currentPersona) opt.selected = true;
     personaSelect.appendChild(opt);
   }
+  onPersonaChange();
 }
 
 async function loadSessions() {
@@ -413,14 +448,17 @@ function renderSessionList() {
 
     for (const s of sessions) {
       const item = document.createElement('div');
-      item.className = 'session-item' + (s.id === sessionId ? ' active' : '');
-      item.onclick = () => resumeSession(s.id, pid);
+      item.className = 'session-item' + (s.id === sessionId ? ' active' : '') + (s.incognito ? ' incognito' : '');
+      item.onclick = () => resumeSession(s.id, pid, s.incognito, s.nsfw_mode);
 
       const preview = s.last_user_msg || 'Empty session';
       const time = s.last_time ? new Date(s.last_time).toLocaleString() : '';
       const count = s.message_count || 0;
+      let badges = '';
+      if (s.incognito) badges += '<span class="badge incognito">incognito</span>';
+      if (s.nsfw_mode) badges += '<span class="badge nsfw">nsfw</span>';
 
-      item.innerHTML = '<div>' + escHtml(preview) + '</div>'
+      item.innerHTML = '<div>' + escHtml(preview) + badges + '</div>'
         + '<div class="session-meta">' + count + ' msgs' + (time ? ' &middot; ' + time : '') + '</div>';
       sessionListEl.appendChild(item);
     }
@@ -429,32 +467,52 @@ function renderSessionList() {
 
 function onPersonaChange() {
   currentPersona = personaSelect.value;
+  const p = personas[currentPersona];
+  if (p && p.nsfw_capable) {
+    nsfwToggleRow.classList.remove('hidden');
+  } else {
+    nsfwToggleRow.classList.add('hidden');
+    nsfwToggle.checked = false;
+  }
   renderSessionList();
 }
 
 async function newChat() {
+  sessionNsfw = nsfwToggle.checked;
+  sessionIncognito = incognitoToggle.checked;
   const resp = await fetch('/sessions/new', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ user_id: USER_ID, persona: currentPersona })
+    body: JSON.stringify({
+      user_id: USER_ID, persona: currentPersona,
+      nsfw_mode: sessionNsfw, incognito: sessionIncognito
+    })
   });
   const data = await resp.json();
   sessionId = data.session_id;
   chatEl.innerHTML = '';
-  headerPersona.textContent = (personas[currentPersona] ? personas[currentPersona].name : currentPersona);
+  let header = (personas[currentPersona] ? personas[currentPersona].name : currentPersona);
+  if (sessionIncognito) header += ' [incognito]';
+  if (sessionNsfw) header += ' [nsfw]';
+  headerPersona.textContent = header;
   headerEmotion.textContent = '';
   await loadSessions();
   inputEl.focus();
 }
 
-async function resumeSession(sid, pid) {
+async function resumeSession(sid, pid, isIncognito, isNsfw) {
   sessionId = sid;
   currentPersona = pid;
+  sessionIncognito = isIncognito || false;
+  sessionNsfw = isNsfw || false;
   personaSelect.value = pid;
 
   // Load existing messages
   chatEl.innerHTML = '';
-  headerPersona.textContent = (personas[pid] ? personas[pid].name : pid);
+  let header = (personas[pid] ? personas[pid].name : pid);
+  if (sessionIncognito) header += ' [incognito]';
+  if (sessionNsfw) header += ' [nsfw]';
+  headerPersona.textContent = header;
   headerEmotion.textContent = 'Loading...';
 
   try {
@@ -479,15 +537,23 @@ async function sendMsg() {
 
   // Auto-create session if none selected
   if (!sessionId) {
+    sessionNsfw = nsfwToggle.checked;
+    sessionIncognito = incognitoToggle.checked;
     const resp = await fetch('/sessions/new', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ user_id: USER_ID, persona: currentPersona })
+      body: JSON.stringify({
+        user_id: USER_ID, persona: currentPersona,
+        nsfw_mode: sessionNsfw, incognito: sessionIncognito
+      })
     });
     const data = await resp.json();
     sessionId = data.session_id;
     chatEl.innerHTML = '';
-    headerPersona.textContent = (personas[currentPersona] ? personas[currentPersona].name : currentPersona);
+    let header = (personas[currentPersona] ? personas[currentPersona].name : currentPersona);
+    if (sessionIncognito) header += ' [incognito]';
+    if (sessionNsfw) header += ' [nsfw]';
+    headerPersona.textContent = header;
   }
 
   addMsg('user', msg);
@@ -498,7 +564,9 @@ async function sendMsg() {
       message: msg,
       user_id: USER_ID,
       persona: currentPersona,
-      session_id: sessionId
+      session_id: sessionId,
+      nsfw_mode: sessionNsfw,
+      incognito: sessionIncognito
     };
     const resp = await fetch('/chat', {
       method: 'POST',

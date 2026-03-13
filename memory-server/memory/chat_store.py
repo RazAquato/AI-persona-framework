@@ -35,7 +35,8 @@ PG_CONFIG = {
 def get_connection():
     return psycopg2.connect(**PG_CONFIG)
 
-def start_chat_session(user_id: int, personality_id: str = None, context_summary: str = None) -> int:
+def start_chat_session(user_id: int, personality_id: str = None, context_summary: str = None,
+                       incognito: bool = False, nsfw_mode: bool = False) -> int:
     """
     Create a new chat session and return the session ID.
     """
@@ -43,10 +44,10 @@ def start_chat_session(user_id: int, personality_id: str = None, context_summary
     try:
         with conn.cursor() as cur:
             cur.execute("""
-                INSERT INTO chat_sessions (user_id, personality_id, context_summary)
-                VALUES (%s, %s, %s)
+                INSERT INTO chat_sessions (user_id, personality_id, context_summary, incognito, nsfw_mode)
+                VALUES (%s, %s, %s, %s, %s)
                 RETURNING id;
-            """, (user_id, personality_id, context_summary))
+            """, (user_id, personality_id, context_summary, incognito, nsfw_mode))
             session_id = cur.fetchone()[0]
         conn.commit()
         return session_id
@@ -142,7 +143,9 @@ def list_sessions(user_id: int, limit: int = 50):
                     (SELECT content FROM chat_messages
                      WHERE session_id = s.id AND role = 'user'
                      ORDER BY timestamp DESC LIMIT 1) AS last_user_msg,
-                    MAX(m.timestamp) AS last_time
+                    MAX(m.timestamp) AS last_time,
+                    s.incognito,
+                    s.nsfw_mode
                 FROM chat_sessions s
                 LEFT JOIN chat_messages m ON m.session_id = s.id
                 WHERE s.user_id = %s
@@ -154,11 +157,13 @@ def list_sessions(user_id: int, limit: int = 50):
             return [
                 {
                     "id": r[0],
-                    "personality_id": r[1] or "default",
+                    "personality_id": r[1] or "girlfriend",
                     "start_time": r[2].isoformat() if r[2] else None,
                     "message_count": r[3],
                     "last_user_msg": (r[4][:80] + "...") if r[4] and len(r[4]) > 80 else r[4],
                     "last_time": r[5].isoformat() if r[5] else None,
+                    "incognito": r[6] or False,
+                    "nsfw_mode": r[7] or False,
                 }
                 for r in rows
             ]

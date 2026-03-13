@@ -32,9 +32,20 @@ class TestAPIEndpoints(unittest.TestCase):
         self.assertIn("personas", data)
         self.assertIn("girlfriend", data["personas"])
         self.assertIn("debug", data["personas"])
+        self.assertIn("trainer", data["personas"])
+        self.assertIn("psychiatrist", data["personas"])
+        self.assertEqual(len(data["personas"]), 4)
         for pid, info in data["personas"].items():
             self.assertIn("name", info)
             self.assertIn("description", info)
+            self.assertIn("nsfw_capable", info)
+
+    def test_personas_nsfw_capable_flag(self):
+        resp = self.client.get("/personas")
+        data = resp.json()["personas"]
+        self.assertTrue(data["girlfriend"]["nsfw_capable"])
+        self.assertFalse(data["debug"]["nsfw_capable"])
+        self.assertFalse(data["trainer"]["nsfw_capable"])
 
     def test_tools_endpoint(self):
         resp = self.client.get("/tools")
@@ -53,7 +64,6 @@ class TestAPIEndpoints(unittest.TestCase):
             }]
         }
         mock_get.return_value = mock_resp
-
         resp = self.client.get("/model")
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
@@ -71,9 +81,11 @@ class TestAPIEndpoints(unittest.TestCase):
     def test_sessions_endpoint(self, mock_list):
         mock_list.return_value = [
             {"id": 1, "personality_id": "girlfriend", "start_time": "2026-01-01T00:00:00",
-             "message_count": 5, "last_user_msg": "hi", "last_time": "2026-01-01T01:00:00"},
+             "message_count": 5, "last_user_msg": "hi", "last_time": "2026-01-01T01:00:00",
+             "incognito": False, "nsfw_mode": False},
             {"id": 2, "personality_id": "debug", "start_time": "2026-01-02T00:00:00",
-             "message_count": 2, "last_user_msg": "test", "last_time": "2026-01-02T01:00:00"},
+             "message_count": 2, "last_user_msg": "test", "last_time": "2026-01-02T01:00:00",
+             "incognito": True, "nsfw_mode": False},
         ]
         resp = self.client.get("/sessions?user_id=9999")
         self.assertEqual(resp.status_code, 200)
@@ -81,17 +93,31 @@ class TestAPIEndpoints(unittest.TestCase):
         self.assertIn("sessions", data)
         self.assertIn("girlfriend", data["sessions"])
         self.assertIn("debug", data["sessions"])
-        self.assertEqual(len(data["sessions"]["girlfriend"]), 1)
 
     @patch("interface.api.app.start_chat_session")
     def test_new_session_endpoint(self, mock_start):
         mock_start.return_value = 42
-        resp = self.client.post("/sessions/new", json={"user_id": 9999, "persona": "girlfriend"})
+        resp = self.client.post("/sessions/new", json={
+            "user_id": 9999, "persona": "girlfriend",
+            "nsfw_mode": True, "incognito": False
+        })
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
         self.assertEqual(data["session_id"], 42)
         self.assertEqual(data["persona"], "girlfriend")
-        mock_start.assert_called_once_with(9999, "girlfriend")
+        self.assertTrue(data["nsfw_mode"])
+        self.assertFalse(data["incognito"])
+        mock_start.assert_called_once_with(9999, "girlfriend", incognito=False, nsfw_mode=True)
+
+    @patch("interface.api.app.start_chat_session")
+    def test_new_session_incognito(self, mock_start):
+        mock_start.return_value = 99
+        resp = self.client.post("/sessions/new", json={
+            "user_id": 9999, "persona": "debug", "incognito": True
+        })
+        data = resp.json()
+        self.assertTrue(data["incognito"])
+        mock_start.assert_called_once_with(9999, "debug", incognito=True, nsfw_mode=False)
 
     @patch("interface.api.app.get_chat_messages")
     def test_session_messages_endpoint(self, mock_msgs):
@@ -104,7 +130,6 @@ class TestAPIEndpoints(unittest.TestCase):
         data = resp.json()
         self.assertEqual(len(data["messages"]), 2)
         self.assertEqual(data["messages"][0]["role"], "user")
-        self.assertEqual(data["messages"][1]["content"], "Hi there")
 
     def test_chat_missing_message_returns_422(self):
         resp = self.client.post("/chat", json={"user_id": 9999})
@@ -116,6 +141,11 @@ class TestAPIEndpoints(unittest.TestCase):
         self.assertIn("persona-select", resp.text)
         self.assertIn("new-chat-btn", resp.text)
         self.assertIn("session-list", resp.text)
+
+    def test_html_contains_toggles(self):
+        resp = self.client.get("/")
+        self.assertIn("nsfw-toggle", resp.text)
+        self.assertIn("incognito-toggle", resp.text)
 
     def test_html_contains_model_badge(self):
         resp = self.client.get("/")

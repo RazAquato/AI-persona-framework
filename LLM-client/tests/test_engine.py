@@ -38,7 +38,7 @@ class TestEngine(unittest.TestCase):
     def test_personality_id_passed(self, mock_store_emotion):
         """Should accept and use personality_id parameter."""
         result = run_conversation_turn(
-            user_id=9999, user_input="Hi!", personality_id="default"
+            user_id=9999, user_input="Hi!", personality_id="girlfriend"
         )
         self.assertIn("assistant_reply", result)
 
@@ -90,6 +90,37 @@ class TestEngine(unittest.TestCase):
         """Result dict should include llm_raw field."""
         result = run_conversation_turn(user_id=9999, user_input="Hi!")
         self.assertIn("llm_raw", result)
+
+
+class TestIncognitoMode(unittest.TestCase):
+
+    @patch("core.engine.link_all_topics")
+    @patch("core.engine.create_topic_relation")
+    @patch("core.engine.store_fact")
+    @patch("core.engine.save_persona_emotion")
+    @patch("core.engine.store_embedding")
+    @patch("core.engine.store_emotion_vector")
+    @patch("core.engine.log_chat_message")
+    def test_incognito_skips_all_persistence(self, mock_log, mock_emo, mock_embed,
+                                              mock_save_persona, mock_fact,
+                                              mock_topic, mock_link):
+        result = run_conversation_turn(
+            user_id=9999, user_input="Secret message", incognito=True
+        )
+        self.assertIn("assistant_reply", result)
+        self.assertTrue(result["incognito"])
+        mock_log.assert_not_called()
+        mock_emo.assert_not_called()
+        mock_embed.assert_not_called()
+        mock_save_persona.assert_not_called()
+        mock_fact.assert_not_called()
+
+    @patch("core.engine.store_emotion_vector")
+    def test_nsfw_mode_in_result(self, mock_emo):
+        result = run_conversation_turn(
+            user_id=9999, user_input="Hello", nsfw_mode=True
+        )
+        self.assertTrue(result["nsfw_mode"])
 
 
 class TestStoreEntityInGraph(unittest.TestCase):

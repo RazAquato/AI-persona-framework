@@ -64,7 +64,9 @@ CREATE TABLE chat_sessions (
     user_id INT REFERENCES users(id),
     personality_id TEXT,
     start_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    context_summary TEXT
+    context_summary TEXT,
+    incognito BOOLEAN DEFAULT FALSE,
+    nsfw_mode BOOLEAN DEFAULT FALSE
 );
 """)
 

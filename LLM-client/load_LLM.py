@@ -15,7 +15,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-import argparse, subprocess, yaml, os, json, glob
+import argparse, subprocess, yaml, os, glob
 # Load environment
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 LLAMA_PATH = os.path.join(BASE_DIR, "..", "llama.cpp")
@@ -30,9 +30,6 @@ if os.path.isdir(_venv_nvidia):
 with open(os.path.join(BASE_DIR, "config", "model_configs.yaml"), "r") as f:
     configs = yaml.safe_load(f)
 
-with open(os.path.join(BASE_DIR, "config", "personality_config.json"), "r") as f:
-    personalities = json.load(f)
-
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--model", required=True)
@@ -43,12 +40,6 @@ if not conf:
     print(f"Model '{args.model}' not found, using default 'tinyllama'")
     args.model = "tinyllama"
     conf = configs["tinyllama"]
-
-# persona selection (falls back to "default" if not provided)
-persona_key = conf.get("persona", "default")
-persona = personalities.get(persona_key, {})
-system_prompt = persona.get("system_prompt", "")
-
 
 cmd = [
     os.path.join(LLAMA_PATH, "build", "bin", "llama-server"),
@@ -61,13 +52,6 @@ cmd = [
     "--no-warmup"
 ]
 
-# dette fungerer ikke, llama-server har ikke system prompts
-#cmd += ["--chat-template", ""]
-
-# Inject the persona’s system prompt if present
-#if system_prompt:
-#    cmd += ["--prompt", system_prompt]
-
-print(f"Launching model: {args.model} (persona: {persona_key if system_prompt else 'none'})")
+print(f"Launching model: {args.model}")
 subprocess.run(cmd)
 

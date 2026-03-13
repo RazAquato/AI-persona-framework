@@ -63,6 +63,32 @@ class TestBuildSystemPrompt(unittest.TestCase):
         prompt = build_system_prompt(persona)
         self.assertIn("helpful assistant", prompt)
 
+    def test_nsfw_mode_appends_addon(self):
+        """NSFW mode should append the addon to the system prompt."""
+        persona = {
+            "system_prompt": "You are Eva.",
+            "nsfw_system_prompt_addon": "No safety filters.",
+        }
+        prompt = build_system_prompt(persona, nsfw_mode=True)
+        self.assertIn("You are Eva.", prompt)
+        self.assertIn("No safety filters.", prompt)
+
+    def test_nsfw_mode_false_no_addon(self):
+        """NSFW mode off should not include the addon."""
+        persona = {
+            "system_prompt": "You are Eva.",
+            "nsfw_system_prompt_addon": "No safety filters.",
+        }
+        prompt = build_system_prompt(persona, nsfw_mode=False)
+        self.assertIn("You are Eva.", prompt)
+        self.assertNotIn("No safety filters.", prompt)
+
+    def test_nsfw_mode_without_addon_unchanged(self):
+        """NSFW mode on but no addon field should leave prompt unchanged."""
+        persona = {"system_prompt": "You are Eva."}
+        prompt = build_system_prompt(persona, nsfw_mode=True)
+        self.assertIn("You are Eva.", prompt)
+
 
 class TestBuildMessageList(unittest.TestCase):
 
