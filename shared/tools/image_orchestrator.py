@@ -54,6 +54,7 @@ if SHARED_ROOT not in sys.path:
 
 from tools.comfyui_client import ComfyUIClient
 from tools.comfyui_workflows import get_workflow, list_workflows, sd15_basic
+from tools.nsfw_classifier import check_output
 
 # Default ComfyUI server URL (same machine)
 COMFYUI_URL = os.getenv("COMFYUI_URL", "http://127.0.0.1:8188")
@@ -64,6 +65,9 @@ NSFW_KEYWORDS = {
     "topless", "lingerie", "hentai", "lewd", "explicit",
     "undressed", "bondage", "fetish",
 }
+
+# Workflows restricted to adult users only
+ADULT_ONLY_WORKFLOWS = {"sd15_nsfw"}
 
 
 class ImageOrchestrator:
@@ -113,6 +117,11 @@ class ImageOrchestrator:
 
         # 3. Select workflow
         wf_name = workflow_name or self._select_workflow(user_permission)
+
+        # Block non-adult users from adult-only workflows
+        if wf_name in ADULT_ONLY_WORKFLOWS and user_permission != "adult":
+            return self._error(f"Workflow '{wf_name}' requires adult permission")
+
         wf_entry = get_workflow(wf_name)
         if wf_entry is None:
             return self._error(f"Unknown workflow: {wf_name}")
@@ -137,6 +146,29 @@ class ImageOrchestrator:
         result["filtered_prompt"] = filtered_prompt
         result["workflow"] = wf_name
         result["user_id"] = user_id
+
+        # 6. Safety Layer 2: post-generation output classification
+        if result["success"] and result["images"]:
+            result["nsfw_classifications"] = []
+            blocked_images = []
+            safe_images = []
+
+            for img_path in result["images"]:
+                classification = check_output(img_path, user_permission)
+                result["nsfw_classifications"].append(classification)
+                if classification["blocked"]:
+                    blocked_images.append(img_path)
+                else:
+                    safe_images.append(img_path)
+
+            if blocked_images:
+                result["images"] = safe_images
+                if not safe_images:
+                    result["success"] = False
+                    result["error"] = (
+                        "All generated images were blocked by safety filter"
+                    )
+
         return result
 
     def filter_prompt(self, prompt: str, user_permission: str) -> dict:
@@ -174,10 +206,13 @@ class ImageOrchestrator:
     def _select_workflow(self, user_permission: str) -> str:
         """
         Auto-select the best workflow based on user permissions.
-        For now, defaults to sd15_basic (lowest VRAM, most compatible).
         """
-        # Future: check available VRAM, user preferences, etc.
-        return "sd15_basic"
+        if user_permission == "child":
+            return "sdxl_safe"
+        elif user_permission == "teen":
+            return "sd15_basic"
+        else:
+            return "sd15_basic"
 
     def _error(self, message: str) -> dict:
         return {

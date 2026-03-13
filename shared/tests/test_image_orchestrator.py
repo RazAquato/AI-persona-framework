@@ -14,10 +14,15 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+import os
+import tempfile
 import unittest
 from unittest.mock import patch, MagicMock
-from tools.image_orchestrator import ImageOrchestrator, NSFW_KEYWORDS
-from tools.comfyui_workflows import sd15_basic, sdxl_turbo, list_workflows, get_workflow
+from tools.image_orchestrator import ImageOrchestrator, NSFW_KEYWORDS, ADULT_ONLY_WORKFLOWS
+from tools.comfyui_workflows import (
+    sd15_basic, sdxl_turbo, sd15_nsfw, sdxl_safe,
+    list_workflows, get_workflow,
+)
 
 
 class TestPromptFilter(unittest.TestCase):
@@ -70,15 +75,23 @@ class TestWorkflowSelection(unittest.TestCase):
     def setUp(self):
         self.orch = ImageOrchestrator()
 
-    def test_default_workflow_selection(self):
+    def test_adult_default_workflow(self):
         wf = self.orch._select_workflow("adult")
         self.assertEqual(wf, "sd15_basic")
 
-    def test_list_workflows_not_empty(self):
+    def test_teen_default_workflow(self):
+        wf = self.orch._select_workflow("teen")
+        self.assertEqual(wf, "sd15_basic")
+
+    def test_child_default_workflow(self):
+        wf = self.orch._select_workflow("child")
+        self.assertEqual(wf, "sdxl_safe")
+
+    def test_list_workflows_has_all_four(self):
         wfs = list_workflows()
-        self.assertGreater(len(wfs), 0)
+        names = {wf["name"] for wf in wfs}
+        self.assertEqual(names, {"sd15_basic", "sdxl_turbo", "sd15_nsfw", "sdxl_safe"})
         for wf in wfs:
-            self.assertIn("name", wf)
             self.assertIn("description", wf)
             self.assertIn("min_vram_gb", wf)
 
@@ -95,18 +108,38 @@ class TestWorkflowSelection(unittest.TestCase):
 class TestWorkflowTemplates(unittest.TestCase):
     """Test that workflow templates produce valid ComfyUI JSON."""
 
-    def test_sd15_basic_structure(self):
-        wf = sd15_basic("a cat")
+    def _assert_valid_workflow(self, wf, prompt_text):
+        """Common checks for all workflow templates."""
         self.assertIn("3", wf)  # KSampler
         self.assertIn("4", wf)  # CheckpointLoader
         self.assertIn("9", wf)  # SaveImage
         self.assertEqual(wf["4"]["class_type"], "CheckpointLoaderSimple")
-        self.assertEqual(wf["6"]["inputs"]["text"], "a cat")
+        self.assertEqual(wf["6"]["inputs"]["text"], prompt_text)
+
+    def test_sd15_basic_structure(self):
+        wf = sd15_basic("a cat")
+        self._assert_valid_workflow(wf, "a cat")
 
     def test_sdxl_turbo_structure(self):
         wf = sdxl_turbo("a dog")
+        self._assert_valid_workflow(wf, "a dog")
         self.assertEqual(wf["3"]["inputs"]["steps"], 4)
         self.assertEqual(wf["3"]["inputs"]["cfg"], 1.0)
+
+    def test_sd15_nsfw_structure(self):
+        wf = sd15_nsfw("a painting")
+        self._assert_valid_workflow(wf, "a painting")
+        self.assertEqual(wf["3"]["inputs"]["steps"], 30)
+        self.assertEqual(wf["9"]["inputs"]["filename_prefix"], "persona_nsfw")
+
+    def test_sdxl_safe_structure(self):
+        wf = sdxl_safe("a rainbow")
+        self._assert_valid_workflow(wf, "a rainbow")
+        neg = wf["7"]["inputs"]["text"]
+        self.assertIn("nsfw", neg)
+        self.assertIn("violence", neg)
+        self.assertIn("weapons", neg)
+        self.assertEqual(wf["9"]["inputs"]["filename_prefix"], "persona_safe")
 
     def test_sd15_custom_params(self):
         wf = sd15_basic("test", width=768, height=768, steps=50, cfg=10.0, seed=42)
@@ -121,15 +154,110 @@ class TestWorkflowTemplates(unittest.TestCase):
         self.assertEqual(wf["7"]["inputs"]["text"], "dog, ugly")
 
 
-class TestOrchestratorGenerate(unittest.TestCase):
-    """Test the full generate flow with mocked ComfyUI."""
+class TestAdultOnlyWorkflowGating(unittest.TestCase):
+    """Test that adult-only workflows are blocked for non-adult users."""
+
+    def setUp(self):
+        self.orch = ImageOrchestrator()
+        self.orch.client.is_alive = MagicMock(return_value=True)
+
+    def test_teen_blocked_from_nsfw_workflow(self):
+        result = self.orch.generate(
+            "a painting", user_id=1, user_permission="teen",
+            workflow_name="sd15_nsfw",
+        )
+        self.assertFalse(result["success"])
+        self.assertIn("requires adult", result["error"])
+
+    def test_child_blocked_from_nsfw_workflow(self):
+        result = self.orch.generate(
+            "a painting", user_id=1, user_permission="child",
+            workflow_name="sd15_nsfw",
+        )
+        self.assertFalse(result["success"])
+        self.assertIn("requires adult", result["error"])
+
+    def test_adult_allowed_nsfw_workflow(self):
+        mock_client = MagicMock()
+        mock_client.is_alive.return_value = True
+        mock_client.generate.return_value = {
+            "prompt_id": "x", "images": [], "success": True, "error": None,
+        }
+        self.orch.client = mock_client
+        result = self.orch.generate(
+            "a painting", user_id=9999, user_permission="adult",
+            workflow_name="sd15_nsfw",
+        )
+        self.assertTrue(result["success"])
+        self.assertEqual(result["workflow"], "sd15_nsfw")
+
+
+class TestNSFWClassifier(unittest.TestCase):
+    """Test the NSFW output classifier (Safety Layer 2)."""
+
+    def test_classify_safe_image(self):
+        from tools.nsfw_classifier import classify_image
+        # Create a plain white image
+        from PIL import Image
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+            img = Image.new("RGB", (64, 64), "white")
+            img.save(f.name)
+            result = classify_image(f.name)
+            os.unlink(f.name)
+        self.assertIn("nsfw_score", result)
+        self.assertIn("label", result)
+        self.assertEqual(result["label"], "normal")
+
+    def test_check_output_adult_never_blocks(self):
+        from tools.nsfw_classifier import check_output
+        from PIL import Image
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+            img = Image.new("RGB", (64, 64), "white")
+            img.save(f.name)
+            result = check_output(f.name, "adult")
+            self.assertFalse(result["blocked"])
+            # File should still exist for adults
+            self.assertTrue(os.path.exists(f.name))
+            os.unlink(f.name)
+
+    @patch("tools.nsfw_classifier.classify_image")
+    def test_check_output_child_blocks_nsfw(self, mock_classify):
+        mock_classify.return_value = {"nsfw_score": 0.85, "label": "nsfw"}
+        from tools.nsfw_classifier import check_output
+        from PIL import Image
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+            img = Image.new("RGB", (64, 64), "white")
+            img.save(f.name)
+            result = check_output(f.name, "child")
+            self.assertTrue(result["blocked"])
+            self.assertIn("nsfw", result["reason"].lower() if result["reason"] else "")
+            # File should be deleted
+            self.assertFalse(os.path.exists(f.name))
+
+    @patch("tools.nsfw_classifier.classify_image")
+    def test_check_output_adult_tags_but_allows_nsfw(self, mock_classify):
+        mock_classify.return_value = {"nsfw_score": 0.85, "label": "nsfw"}
+        from tools.nsfw_classifier import check_output
+        from PIL import Image
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+            img = Image.new("RGB", (64, 64), "white")
+            img.save(f.name)
+            result = check_output(f.name, "adult")
+            self.assertFalse(result["blocked"])
+            self.assertEqual(result["label"], "nsfw")
+            # File should still exist
+            self.assertTrue(os.path.exists(f.name))
+            os.unlink(f.name)
+
+
+class TestOrchestratorWithClassifier(unittest.TestCase):
+    """Test the full generate flow including Safety Layer 2."""
 
     def setUp(self):
         self.orch = ImageOrchestrator()
 
     @patch.object(ImageOrchestrator, 'is_available', return_value=False)
     def test_generate_fails_when_comfyui_down(self, _):
-        # Patch client.is_alive directly
         self.orch.client.is_alive = MagicMock(return_value=False)
         result = self.orch.generate("a cat", user_id=9999)
         self.assertFalse(result["success"])
@@ -141,8 +269,12 @@ class TestOrchestratorGenerate(unittest.TestCase):
         self.assertFalse(result["success"])
         self.assertIn("blocked", result["error"].lower())
 
-    @patch("tools.image_orchestrator.ComfyUIClient")
-    def test_generate_success_flow(self, MockClient):
+    @patch("tools.image_orchestrator.check_output")
+    def test_generate_success_with_safe_classification(self, mock_check):
+        mock_check.return_value = {
+            "nsfw_score": 0.02, "label": "normal",
+            "blocked": False, "reason": None,
+        }
         mock_client = MagicMock()
         mock_client.is_alive.return_value = True
         mock_client.generate.return_value = {
@@ -151,14 +283,34 @@ class TestOrchestratorGenerate(unittest.TestCase):
             "success": True,
             "error": None,
         }
-        orch = ImageOrchestrator()
-        orch.client = mock_client
+        self.orch.client = mock_client
 
-        result = orch.generate("a cute cat", user_id=9999)
+        result = self.orch.generate("a cute cat", user_id=9999)
         self.assertTrue(result["success"])
         self.assertEqual(result["images"], ["/path/to/image.png"])
-        self.assertEqual(result["filtered_prompt"], "a cute cat")
-        self.assertEqual(result["workflow"], "sd15_basic")
+        self.assertIn("nsfw_classifications", result)
+        self.assertEqual(len(result["nsfw_classifications"]), 1)
+
+    @patch("tools.image_orchestrator.check_output")
+    def test_generate_blocks_nsfw_output_for_child(self, mock_check):
+        mock_check.return_value = {
+            "nsfw_score": 0.9, "label": "nsfw",
+            "blocked": True, "reason": "NSFW detected",
+        }
+        mock_client = MagicMock()
+        mock_client.is_alive.return_value = True
+        mock_client.generate.return_value = {
+            "prompt_id": "abc123",
+            "images": ["/path/to/image.png"],
+            "success": True,
+            "error": None,
+        }
+        self.orch.client = mock_client
+
+        result = self.orch.generate("a flower", user_id=1, user_permission="child")
+        self.assertFalse(result["success"])
+        self.assertIn("blocked by safety", result["error"].lower())
+        self.assertEqual(result["images"], [])
 
     def test_generate_unknown_workflow_fails(self):
         self.orch.client.is_alive = MagicMock(return_value=True)
@@ -167,7 +319,6 @@ class TestOrchestratorGenerate(unittest.TestCase):
         self.assertIn("Unknown workflow", result["error"])
 
     def test_generate_adds_nsfw_negative_for_teen(self):
-        """Teen users should get nsfw in negative prompt automatically."""
         mock_client = MagicMock()
         mock_client.is_alive.return_value = True
         mock_client.generate.return_value = {
@@ -176,7 +327,6 @@ class TestOrchestratorGenerate(unittest.TestCase):
         self.orch.client = mock_client
         self.orch.generate("a flower", user_id=1, user_permission="teen")
 
-        # Inspect the workflow passed to client.generate
         call_args = mock_client.generate.call_args[0][0]
         neg_text = call_args["7"]["inputs"]["text"]
         self.assertIn("nsfw", neg_text)
