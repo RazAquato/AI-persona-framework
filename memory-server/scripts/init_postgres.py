@@ -38,6 +38,7 @@ cur.execute("""
 CREATE TABLE users (
     id SERIAL PRIMARY KEY,
     name TEXT NOT NULL,
+    password_hash TEXT,
     discord_id TEXT,
     preferences JSONB,
     settings_json JSONB

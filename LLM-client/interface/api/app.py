@@ -17,9 +17,8 @@
 """
 Web API for AI Persona Chat
 ----------------------------
-FastAPI app that routes user messages through the engine.
-Handles /commands (like /image) directly via the tool registry,
-and regular messages through the full conversation pipeline.
+FastAPI app with cookie-based authentication.
+Routes user messages through the engine pipeline.
 
 Usage:
     cd LLM-client/interface/api && uvicorn app:app --host 0.0.0.0 --port 8000 --reload
@@ -29,7 +28,7 @@ import os
 import sys
 import re
 import json
-import requests
+import requests as http_requests
 
 # Path setup
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -42,15 +41,19 @@ for p in [LLM_CLIENT_ROOT, MEMORY_PATH, SHARED_PATH, TOOLS_PATH]:
     if p not in sys.path:
         sys.path.append(p)
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Request, Response, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 from typing import Optional
 
 from core.engine import run_conversation_turn
 from core.router import is_tool_command, parse_tool_command
+from core.auth import hash_password, verify_password, create_auth_cookie, verify_auth_cookie
 from memory.chat_store import list_sessions, start_chat_session, get_chat_messages
+from memory.user_store import (
+    create_user, get_user_by_name, get_user_by_id, get_session_owner,
+)
 import tool_registry
 
 # Load persona configs
@@ -64,6 +67,9 @@ _llm_env = os.path.join(LLM_CLIENT_ROOT, "config", ".env")
 load_dotenv(dotenv_path=_llm_env)
 LLM_SERVER = os.getenv("LLM_SERVER", "http://10.0.20.200:8080")
 
+COOKIE_NAME = "session"
+COOKIE_MAX_AGE = 30 * 24 * 3600  # 30 days
+
 app = FastAPI(title="AI Persona Chat")
 
 app.add_middleware(
@@ -74,9 +80,88 @@ app.add_middleware(
 )
 
 
+# --- Auth dependency ---
+
+def get_current_user(request: Request) -> int:
+    """Extract authenticated user_id from cookie. Raises 401 if invalid."""
+    cookie = request.cookies.get(COOKIE_NAME)
+    user_id = verify_auth_cookie(cookie)
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return user_id
+
+
+# --- Auth endpoints ---
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class RegisterRequest(BaseModel):
+    username: str
+    password: str
+
+
+@app.post("/api/login")
+async def api_login(req: LoginRequest, response: Response):
+    """Verify credentials and set session cookie."""
+    row = get_user_by_name(req.username)
+    if not row:
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+    user_id, name, pw_hash = row
+    if not pw_hash or not verify_password(req.password, pw_hash):
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+    cookie = create_auth_cookie(user_id)
+    response.set_cookie(
+        COOKIE_NAME, cookie, max_age=COOKIE_MAX_AGE,
+        httponly=True, samesite="lax",
+    )
+    return {"user_id": user_id, "username": name}
+
+
+@app.post("/api/register")
+async def api_register(req: RegisterRequest, response: Response):
+    """Create a new user account and set session cookie."""
+    if not req.username or not req.password:
+        raise HTTPException(status_code=400, detail="Username and password required")
+    if len(req.username) < 2:
+        raise HTTPException(status_code=400, detail="Username must be at least 2 characters")
+    if len(req.password) < 4:
+        raise HTTPException(status_code=400, detail="Password must be at least 4 characters")
+    existing = get_user_by_name(req.username)
+    if existing:
+        raise HTTPException(status_code=409, detail="Username already taken")
+    pw_hash = hash_password(req.password)
+    user_id = create_user(req.username, pw_hash)
+    cookie = create_auth_cookie(user_id)
+    response.set_cookie(
+        COOKIE_NAME, cookie, max_age=COOKIE_MAX_AGE,
+        httponly=True, samesite="lax",
+    )
+    return {"user_id": user_id, "username": req.username}
+
+
+@app.post("/api/logout")
+async def api_logout(response: Response):
+    """Clear session cookie."""
+    response.delete_cookie(COOKIE_NAME)
+    return {"ok": True}
+
+
+@app.get("/api/me")
+async def api_me(user_id: int = Depends(get_current_user)):
+    """Return the currently authenticated user."""
+    row = get_user_by_id(user_id)
+    if not row:
+        raise HTTPException(status_code=401, detail="User not found")
+    return {"user_id": row[0], "username": row[1]}
+
+
+# --- Chat endpoints (all require auth) ---
+
 class ChatRequest(BaseModel):
     message: str
-    user_id: int = 9999
     persona: str = "girlfriend"
     session_id: Optional[int] = None
     nsfw_mode: bool = False
@@ -94,11 +179,15 @@ class ChatResponse(BaseModel):
 
 
 @app.post("/chat", response_model=ChatResponse)
-async def chat(req: ChatRequest):
-    """
-    Main chat endpoint. Handles both /commands and regular messages.
-    """
+async def chat(req: ChatRequest, user_id: int = Depends(get_current_user)):
+    """Main chat endpoint. Handles both /commands and regular messages."""
     user_input = req.message.strip()
+
+    # Verify session ownership if resuming
+    if req.session_id:
+        owner = get_session_owner(req.session_id)
+        if owner != user_id:
+            raise HTTPException(status_code=403, detail="Session does not belong to you")
 
     # Direct tool commands bypass the LLM entirely
     if is_tool_command(user_input):
@@ -110,7 +199,7 @@ async def chat(req: ChatRequest):
                 user_perm = "adult" if req.nsfw_mode else "adult"
                 result = tool_func(
                     prompt,
-                    user_id=req.user_id,
+                    user_id=user_id,
                     user_permission=user_perm,
                 )
                 if isinstance(result, dict):
@@ -132,7 +221,7 @@ async def chat(req: ChatRequest):
 
     # Regular message: full conversation pipeline
     result = run_conversation_turn(
-        user_id=req.user_id,
+        user_id=user_id,
         user_input=user_input,
         personality_id=req.persona,
         session_id=req.session_id,
@@ -141,10 +230,8 @@ async def chat(req: ChatRequest):
     )
 
     reply = result.get("assistant_reply", "")
-    # Strip <think> blocks
     reply = re.sub(r'<think>.*?</think>\s*', '', reply, flags=re.DOTALL).strip()
 
-    # Extract image paths from tool results
     images = []
     for tr in result.get("tool_results", []):
         if tr.success and tr.result and isinstance(tr.result, dict):
@@ -174,7 +261,7 @@ async def serve_image(filename: str):
 
 
 @app.get("/tools")
-async def list_tools():
+async def list_tools(user_id: int = Depends(get_current_user)):
     """List available tools."""
     return {"tools": tool_registry.describe_tools()}
 
@@ -183,13 +270,12 @@ async def list_tools():
 async def model_info():
     """Get the currently loaded LLM model name."""
     try:
-        resp = requests.get(LLM_SERVER.rstrip("/") + "/v1/models", timeout=5)
+        resp = http_requests.get(LLM_SERVER.rstrip("/") + "/v1/models", timeout=5)
         resp.raise_for_status()
         data = resp.json()
         models = data.get("data", [])
         if models:
             model_id = models[0].get("id", "unknown")
-            # Clean up the GGUF filename to a friendly name
             name = model_id.replace(".gguf", "")
             params = models[0].get("meta", {}).get("n_params", 0)
             return {"model": name, "params": params}
@@ -204,7 +290,7 @@ async def health():
 
 
 @app.get("/personas")
-async def personas():
+async def personas(user_id: int = Depends(get_current_user)):
     """List available personas."""
     result = {}
     for pid, cfg in PERSONA_CONFIGS.items():
@@ -217,8 +303,8 @@ async def personas():
 
 
 @app.get("/sessions")
-async def sessions(user_id: int = Query(default=9999)):
-    """List sessions for a user, grouped by persona."""
+async def sessions(user_id: int = Depends(get_current_user)):
+    """List sessions for the authenticated user, grouped by persona."""
     rows = list_sessions(user_id, limit=100)
     grouped = {}
     for s in rows:
@@ -230,24 +316,26 @@ async def sessions(user_id: int = Query(default=9999)):
 
 
 class NewSessionRequest(BaseModel):
-    user_id: int = 9999
     persona: str = "girlfriend"
     nsfw_mode: bool = False
     incognito: bool = False
 
 
 @app.post("/sessions/new")
-async def new_session(req: NewSessionRequest):
-    """Create a new chat session."""
-    sid = start_chat_session(req.user_id, req.persona,
+async def new_session(req: NewSessionRequest, user_id: int = Depends(get_current_user)):
+    """Create a new chat session for the authenticated user."""
+    sid = start_chat_session(user_id, req.persona,
                              incognito=req.incognito, nsfw_mode=req.nsfw_mode)
     return {"session_id": sid, "persona": req.persona,
             "incognito": req.incognito, "nsfw_mode": req.nsfw_mode}
 
 
 @app.get("/sessions/{session_id}/messages")
-async def session_messages(session_id: int):
-    """Get all messages for a session."""
+async def session_messages(session_id: int, user_id: int = Depends(get_current_user)):
+    """Get all messages for a session (with ownership check)."""
+    owner = get_session_owner(session_id)
+    if owner != user_id:
+        raise HTTPException(status_code=403, detail="Session does not belong to you")
     rows = get_chat_messages(session_id)
     messages = []
     for r in rows:
@@ -259,11 +347,116 @@ async def session_messages(session_id: int):
     return {"messages": messages}
 
 
+# --- Pages ---
+
+@app.get("/login")
+async def login_page(request: Request):
+    """Login/register page. Redirect to / if already authenticated."""
+    cookie = request.cookies.get(COOKIE_NAME)
+    if verify_auth_cookie(cookie):
+        return RedirectResponse("/", status_code=302)
+    return HTMLResponse(LOGIN_HTML)
+
+
 @app.get("/")
-async def index():
-    """Chat UI with sidebar for session management."""
+async def index(request: Request):
+    """Chat UI — redirect to /login if not authenticated."""
+    cookie = request.cookies.get(COOKIE_NAME)
+    if not verify_auth_cookie(cookie):
+        return RedirectResponse("/login", status_code=302)
     return HTMLResponse(CHAT_HTML)
 
+
+# ----- Login / Register HTML -----
+
+LOGIN_HTML = """<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Login - AI Persona Chat</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #eee; height: 100vh; display: flex; align-items: center; justify-content: center; }
+  .card { background: #16213e; padding: 40px; border-radius: 12px; width: 360px; border: 1px solid #2a2a4a; }
+  .card h1 { font-size: 22px; margin-bottom: 8px; color: #ccd; }
+  .card p.sub { font-size: 13px; color: #667; margin-bottom: 24px; }
+  .tabs { display: flex; gap: 0; margin-bottom: 24px; }
+  .tab { flex: 1; padding: 10px; text-align: center; cursor: pointer; border-bottom: 2px solid transparent; color: #667; font-size: 14px; transition: all 0.2s; }
+  .tab.active { color: #ccd; border-bottom-color: #6a6aaa; }
+  .tab:hover { color: #aab; }
+  .field { margin-bottom: 16px; }
+  .field label { display: block; font-size: 13px; color: #aab; margin-bottom: 6px; }
+  .field input { width: 100%; padding: 10px 12px; background: #1a1a2e; color: #eee; border: 1px solid #444; border-radius: 6px; font-size: 14px; }
+  .field input:focus { outline: none; border-color: #6a6aaa; }
+  .btn { width: 100%; padding: 12px; background: #4a4a8a; border: none; border-radius: 6px; color: #eee; font-size: 15px; cursor: pointer; margin-top: 8px; }
+  .btn:hover { background: #5a5a9a; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .error { color: #e77; font-size: 13px; margin-top: 12px; min-height: 20px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>AI Persona Chat</h1>
+  <p class="sub">Sign in or create an account</p>
+  <div class="tabs">
+    <div class="tab active" id="tab-login" onclick="switchTab('login')">Login</div>
+    <div class="tab" id="tab-register" onclick="switchTab('register')">Register</div>
+  </div>
+  <form id="auth-form" onsubmit="submitForm(event)">
+    <div class="field">
+      <label for="username">Username</label>
+      <input id="username" name="username" type="text" autocomplete="username" required autofocus>
+    </div>
+    <div class="field">
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
+    </div>
+    <button class="btn" type="submit" id="submit-btn">Login</button>
+    <div class="error" id="error"></div>
+  </form>
+</div>
+<script>
+let mode = 'login';
+function switchTab(m) {
+  mode = m;
+  document.getElementById('tab-login').className = 'tab' + (m === 'login' ? ' active' : '');
+  document.getElementById('tab-register').className = 'tab' + (m === 'register' ? ' active' : '');
+  document.getElementById('submit-btn').textContent = m === 'login' ? 'Login' : 'Create Account';
+  document.getElementById('password').autocomplete = m === 'login' ? 'current-password' : 'new-password';
+  document.getElementById('error').textContent = '';
+}
+async function submitForm(e) {
+  e.preventDefault();
+  const btn = document.getElementById('submit-btn');
+  const err = document.getElementById('error');
+  err.textContent = '';
+  btn.disabled = true;
+  const username = document.getElementById('username').value.trim();
+  const password = document.getElementById('password').value;
+  try {
+    const url = mode === 'login' ? '/api/login' : '/api/register';
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({username, password})
+    });
+    if (resp.ok) {
+      window.location.href = '/';
+    } else {
+      const data = await resp.json();
+      err.textContent = data.detail || 'Something went wrong';
+    }
+  } catch(e) {
+    err.textContent = 'Connection error';
+  }
+  btn.disabled = false;
+}
+</script>
+</body>
+</html>"""
+
+
+# ----- Chat HTML -----
 
 CHAT_HTML = """<!DOCTYPE html>
 <html>
@@ -278,6 +471,10 @@ CHAT_HTML = """<!DOCTYPE html>
   #sidebar { width: 280px; background: #16213e; display: flex; flex-direction: column; border-right: 1px solid #2a2a4a; flex-shrink: 0; }
   #sidebar-header { padding: 16px; border-bottom: 1px solid #2a2a4a; }
   #sidebar-header h2 { font-size: 16px; margin-bottom: 12px; color: #aab; }
+  #user-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; padding: 8px 0; border-bottom: 1px solid #2a2a4a; }
+  #user-bar .username { font-size: 13px; color: #aab; }
+  #user-bar .logout-btn { font-size: 12px; color: #667; cursor: pointer; background: none; border: 1px solid #444; border-radius: 4px; padding: 4px 8px; }
+  #user-bar .logout-btn:hover { color: #aab; border-color: #666; }
   #persona-select { width: 100%; padding: 8px 12px; background: #1a1a2e; color: #eee; border: 1px solid #444; border-radius: 6px; font-size: 14px; cursor: pointer; }
   #persona-select:focus { outline: none; border-color: #6a6aaa; }
   #new-chat-btn { width: 100%; margin-top: 10px; padding: 10px; background: #4a4a8a; border: none; border-radius: 6px; color: #eee; font-size: 14px; cursor: pointer; }
@@ -329,6 +526,10 @@ CHAT_HTML = """<!DOCTYPE html>
 <!-- Sidebar -->
 <div id="sidebar">
   <div id="sidebar-header">
+    <div id="user-bar">
+      <span class="username" id="username-display">...</span>
+      <button class="logout-btn" onclick="logout()">Logout</button>
+    </div>
     <h2>Personas</h2>
     <select id="persona-select" onchange="onPersonaChange()"></select>
     <div class="toggle-row" id="nsfw-toggle-row">
@@ -371,8 +572,8 @@ const headerModel = document.getElementById('header-model');
 const nsfwToggle = document.getElementById('nsfw-toggle');
 const nsfwToggleRow = document.getElementById('nsfw-toggle-row');
 const incognitoToggle = document.getElementById('incognito-toggle');
+const usernameDisplay = document.getElementById('username-display');
 
-const USER_ID = 9999;
 let sessionId = null;
 let currentPersona = 'girlfriend';
 let sessionNsfw = false;
@@ -384,11 +585,35 @@ inputEl.addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMsg(); }
 });
 
+// --- Auth helpers ---
+async function authFetch(url, opts) {
+  const resp = await fetch(url, opts);
+  if (resp.status === 401) {
+    window.location.href = '/login';
+    throw new Error('Not authenticated');
+  }
+  return resp;
+}
+
+async function logout() {
+  await fetch('/api/logout', {method: 'POST'});
+  window.location.href = '/login';
+}
+
 // --- Init ---
 async function init() {
+  await loadUser();
   await loadPersonas();
   await loadSessions();
   await loadModelInfo();
+}
+
+async function loadUser() {
+  try {
+    const resp = await authFetch('/api/me');
+    const data = await resp.json();
+    usernameDisplay.textContent = data.username;
+  } catch(e) { /* redirect handled by authFetch */ }
 }
 
 async function loadModelInfo() {
@@ -406,7 +631,7 @@ async function loadModelInfo() {
 }
 
 async function loadPersonas() {
-  const resp = await fetch('/personas');
+  const resp = await authFetch('/personas');
   const data = await resp.json();
   personas = data.personas;
   personaSelect.innerHTML = '';
@@ -421,7 +646,7 @@ async function loadPersonas() {
 }
 
 async function loadSessions() {
-  const resp = await fetch('/sessions?user_id=' + USER_ID);
+  const resp = await authFetch('/sessions');
   const data = await resp.json();
   allSessions = data.sessions;
   renderSessionList();
@@ -430,7 +655,6 @@ async function loadSessions() {
 function renderSessionList() {
   sessionListEl.innerHTML = '';
   const personaOrder = Object.keys(personas);
-  // Show current persona's sessions first, then others
   const ordered = [currentPersona, ...personaOrder.filter(p => p !== currentPersona)];
   const seen = new Set();
 
@@ -480,11 +704,11 @@ function onPersonaChange() {
 async function newChat() {
   sessionNsfw = nsfwToggle.checked;
   sessionIncognito = incognitoToggle.checked;
-  const resp = await fetch('/sessions/new', {
+  const resp = await authFetch('/sessions/new', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({
-      user_id: USER_ID, persona: currentPersona,
+      persona: currentPersona,
       nsfw_mode: sessionNsfw, incognito: sessionIncognito
     })
   });
@@ -507,7 +731,6 @@ async function resumeSession(sid, pid, isIncognito, isNsfw) {
   sessionNsfw = isNsfw || false;
   personaSelect.value = pid;
 
-  // Load existing messages
   chatEl.innerHTML = '';
   let header = (personas[pid] ? personas[pid].name : pid);
   if (sessionIncognito) header += ' [incognito]';
@@ -516,7 +739,7 @@ async function resumeSession(sid, pid, isIncognito, isNsfw) {
   headerEmotion.textContent = 'Loading...';
 
   try {
-    const resp = await fetch('/sessions/' + sid + '/messages');
+    const resp = await authFetch('/sessions/' + sid + '/messages');
     const data = await resp.json();
     for (const m of data.messages) {
       addMsg(m.role, m.content);
@@ -535,15 +758,14 @@ async function sendMsg() {
   if (!msg) return;
   inputEl.value = '';
 
-  // Auto-create session if none selected
   if (!sessionId) {
     sessionNsfw = nsfwToggle.checked;
     sessionIncognito = incognitoToggle.checked;
-    const resp = await fetch('/sessions/new', {
+    const resp = await authFetch('/sessions/new', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
-        user_id: USER_ID, persona: currentPersona,
+        persona: currentPersona,
         nsfw_mode: sessionNsfw, incognito: sessionIncognito
       })
     });
@@ -562,13 +784,12 @@ async function sendMsg() {
   try {
     const body = {
       message: msg,
-      user_id: USER_ID,
       persona: currentPersona,
       session_id: sessionId,
       nsfw_mode: sessionNsfw,
       incognito: sessionIncognito
     };
-    const resp = await fetch('/chat', {
+    const resp = await authFetch('/chat', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(body)
@@ -586,12 +807,10 @@ async function sendMsg() {
     }
     addMsgHtml('assistant', html);
 
-    // Update emotion display
     if (data.emotion_description) {
       headerEmotion.textContent = data.emotion_description;
     }
 
-    // Refresh session list to show updated preview
     loadSessions();
   } catch(e) {
     typing.remove();
@@ -600,7 +819,6 @@ async function sendMsg() {
 }
 
 function addMsg(role, text, cls) {
-  // Remove empty state if present
   const empty = document.getElementById('empty-state');
   if (empty) empty.remove();
 
@@ -627,7 +845,6 @@ function escHtml(s) {
   return d.innerHTML;
 }
 
-// Boot
 init();
 </script>
 </body>
