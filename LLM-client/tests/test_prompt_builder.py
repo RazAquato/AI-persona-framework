@@ -89,6 +89,29 @@ class TestBuildSystemPrompt(unittest.TestCase):
         prompt = build_system_prompt(persona, nsfw_mode=True)
         self.assertIn("You are Eva.", prompt)
 
+    def test_echo_prompt_replaces_persona(self):
+        """Echo prompt should replace the persona's system prompt."""
+        persona = {"system_prompt": "You are Eva."}
+        echo = "You are simulating Kenneth's personality."
+        prompt = build_system_prompt(persona, echo_prompt=echo)
+        self.assertIn("simulating Kenneth", prompt)
+        self.assertNotIn("You are Eva.", prompt)
+
+    def test_echo_prompt_with_facts(self):
+        """Echo mode should still include facts section."""
+        persona = {"system_prompt": "You are Eva."}
+        echo = "You are simulating Kenneth's personality."
+        facts = [(1, "User likes hiking", ["hobby"], 0.9)]
+        prompt = build_system_prompt(persona, echo_prompt=echo, facts=facts)
+        self.assertIn("simulating Kenneth", prompt)
+        self.assertIn("User likes hiking", prompt)
+
+    def test_echo_prompt_none_uses_persona(self):
+        """echo_prompt=None should use normal persona prompt."""
+        persona = {"system_prompt": "You are Eva."}
+        prompt = build_system_prompt(persona, echo_prompt=None)
+        self.assertIn("You are Eva.", prompt)
+
 
 class TestBuildMessageList(unittest.TestCase):
 

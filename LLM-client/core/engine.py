@@ -61,6 +61,9 @@ from memory.persona_store import get_persona
 from memory.fact_store import store_fact, store_fact_blobs
 from memory.topic_graph import create_topic_relation, link_all_topics, create_entity, link_entity_to_topic, ingest_extracted_knowledge
 from memory.buffer import conversation_buffer
+from echo.corpus_builder import build_corpus
+from echo.traits_extractor import extract_traits
+from echo.echo_prompt_builder import build_echo_prompt
 from core.llm_client import call_llm
 from core.prompt_builder import build_system_prompt, build_message_list
 from analysis.emotion_handler import EmotionVectorGenerator, PersonaEmotionEngine
@@ -82,6 +85,7 @@ def run_conversation_turn(
     session_id: int = None,
     nsfw_mode: bool = False,
     incognito: bool = False,
+    echo_mode: bool = False,
 ) -> dict:
     """
     Execute one full conversation turn.
@@ -136,7 +140,15 @@ def run_conversation_turn(
     # Generate natural-language emotion description for the prompt
     emotion_description = _persona_engine.describe_emotional_state(new_persona_emotions)
 
-    # 6. Assemble system prompt with all context
+    # 6. Build echo prompt if in echo mode
+    echo_prompt = None
+    if echo_mode:
+        corpus = build_corpus(user_id, max_messages=300)
+        traits = extract_traits(corpus)
+        user_name = persona.get("name", "the user")
+        echo_prompt = build_echo_prompt(traits, user_name=user_name)
+
+    # 7. Assemble system prompt with all context
     system_prompt = build_system_prompt(
         persona=persona,
         persona_emotion_desc=emotion_description,
@@ -144,6 +156,7 @@ def run_conversation_turn(
         similar_memories=context["vectors"],
         related_topics=context["topics"],
         nsfw_mode=nsfw_mode,
+        echo_prompt=echo_prompt,
     )
 
     # 7. Get chat history — use buffer for recent, DB for older
@@ -330,13 +343,14 @@ def run_conversation_turn(
         "tool_results": tool_results,
         "incognito": incognito,
         "nsfw_mode": nsfw_mode,
+        "echo_mode": echo_mode,
         "llm_raw": response.get("raw"),
     }
 
 
 def process_input(user_input: str, session_id: str = None, user_id: int = 9999,
                    persona_id: int = None, nsfw_mode: bool = False,
-                   incognito: bool = False) -> str:
+                   incognito: bool = False, echo_mode: bool = False) -> str:
     """
     Wrapper for router integration.
     """
@@ -347,5 +361,6 @@ def process_input(user_input: str, session_id: str = None, user_id: int = 9999,
         session_id=session_id,
         nsfw_mode=nsfw_mode,
         incognito=incognito,
+        echo_mode=echo_mode,
     )
     return result.get("assistant_reply", "[No reply generated]")
