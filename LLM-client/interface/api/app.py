@@ -208,6 +208,7 @@ async def chat(req: ChatRequest, user_id: int = Depends(get_current_user)):
                     prompt,
                     user_id=user_id,
                     user_permission=user_perm,
+                    persona_id=req.persona_id,
                 )
                 if isinstance(result, dict):
                     images = result.get("images", [])
@@ -255,15 +256,15 @@ async def chat(req: ChatRequest, user_id: int = Depends(get_current_user)):
     )
 
 
-@app.get("/image/{filename}")
-async def serve_image(filename: str):
+@app.get("/image/{filepath:path}")
+async def serve_image(filepath: str):
     """Serve generated images from the ComfyUI output directory."""
     output_dir = os.path.abspath(
         os.path.join(BASE_DIR, "..", "..", "..", "comfyui", "output")
     )
-    filepath = os.path.join(output_dir, filename)
-    if os.path.isfile(filepath) and filepath.startswith(output_dir):
-        return FileResponse(filepath, media_type="image/png")
+    full_path = os.path.abspath(os.path.join(output_dir, filepath))
+    if os.path.isfile(full_path) and full_path.startswith(output_dir):
+        return FileResponse(full_path, media_type="image/png")
     return {"error": "not found"}
 
 
@@ -1126,8 +1127,10 @@ async function sendMsg() {
     let html = escHtml(data.reply);
     if (data.images && data.images.length > 0) {
       for (const img of data.images) {
-        const fname = img.split('/').pop();
-        html += '<img src="/image/' + fname + '" alt="generated image">';
+        // Extract relative path from comfyui/output/ onwards (e.g. "52/3/persona_gen_0001.png")
+        const outputIdx = img.indexOf('comfyui/output/');
+        const relPath = outputIdx >= 0 ? img.substring(outputIdx + 'comfyui/output/'.length) : img.split('/').pop();
+        html += '<img src="/image/' + relPath + '" alt="generated image">';
       }
     }
     addMsgHtml('assistant', html);
