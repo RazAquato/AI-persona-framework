@@ -164,13 +164,48 @@ CREATE TABLE facts (
 );
 """)
 
-# Topic Tags
+# Topic Tags (legacy per-session tags)
 cur.execute("""
 CREATE TABLE topic_tags (
     session_id INT REFERENCES chat_sessions(id),
     topic TEXT,
     confidence FLOAT,
     sentiment FLOAT
+);
+""")
+
+# Topics (first-class topic entities)
+cur.execute("""
+CREATE TABLE topics (
+    id SERIAL PRIMARY KEY,
+    user_id INT REFERENCES users(id),
+    name TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, name)
+);
+""")
+
+# Topic Salience (per-user, per-persona salience tracking)
+cur.execute("""
+CREATE TABLE topic_salience (
+    id SERIAL PRIMARY KEY,
+    user_id INT REFERENCES users(id),
+    persona_id INT REFERENCES user_personalities(id) ON DELETE CASCADE,
+    topic_id INT REFERENCES topics(id) ON DELETE CASCADE,
+    salience FLOAT DEFAULT 0.0,
+    mention_count INT DEFAULT 0,
+    last_mentioned TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    decay_floor FLOAT DEFAULT 0.0,
+    UNIQUE(user_id, persona_id, topic_id)
+);
+""")
+
+# Fact-Topic junction (links facts to topics via tags)
+cur.execute("""
+CREATE TABLE fact_topics (
+    fact_id INT REFERENCES facts(id) ON DELETE CASCADE,
+    topic_id INT REFERENCES topics(id) ON DELETE CASCADE,
+    PRIMARY KEY (fact_id, topic_id)
 );
 """)
 

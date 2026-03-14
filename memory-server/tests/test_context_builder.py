@@ -23,6 +23,7 @@ from memory.vector_store import store_embedding
 from memory.topic_graph import create_topic_relation
 from memory.context_builder import build_context
 from memory.persona_store import create_persona, delete_persona
+from memory.topic_store import bump_salience, link_fact_to_topics
 
 class TestContextBuilder(unittest.TestCase):
 
@@ -64,7 +65,11 @@ class TestContextBuilder(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
+        cls.cur.execute("DELETE FROM topic_salience WHERE user_id = %s;", (cls.user_id,))
+        cls.cur.execute("DELETE FROM fact_topics WHERE fact_id IN (SELECT id FROM facts WHERE user_id = %s);", (cls.user_id,))
         cls.cur.execute("DELETE FROM facts WHERE user_id = %s;", (cls.user_id,))
+        cls.cur.execute("DELETE FROM topics WHERE user_id = %s;", (cls.user_id,))
+        cls.cur.execute("DELETE FROM user_personalities WHERE user_id = %s;", (cls.user_id,))
         cls.cur.execute("DELETE FROM users WHERE id = %s;", (cls.user_id,))
         cls.conn.commit()
         cls.cur.close()
@@ -205,6 +210,52 @@ class TestContextBuilder(unittest.TestCase):
         finally:
             delete_persona(pid1)
             delete_persona(pid2)
+
+    # --- Phase 2: Salience filtering ---
+
+    def test_unlinked_facts_always_visible(self):
+        """Facts with no linked topics should always appear regardless of salience."""
+        pid = create_persona(self.user_id, "ctx_sal_unlinked", "SalUnlinked")
+        try:
+            fid = store_fact(self.user_id, "Unlinked fact always visible ZZZ")
+            context = build_context(self.user_id, "test", persona_id=pid)
+            fact_texts = [f[1] for f in context["facts"]]
+            self.assertTrue(any("Unlinked fact always visible ZZZ" in t for t in fact_texts))
+            if fid:
+                delete_fact(fid)
+        finally:
+            delete_persona(pid)
+
+    def test_high_salience_fact_visible(self):
+        """Facts linked to high-salience topics should be visible."""
+        pid = create_persona(self.user_id, "ctx_sal_high", "SalHigh")
+        try:
+            fid = store_fact(self.user_id, "High salience fact ZZZ", tags=["highsal"])
+            link_fact_to_topics(self.user_id, fid, ["highsal"])
+            for _ in range(10):
+                bump_salience(self.user_id, pid, ["highsal"])
+            context = build_context(self.user_id, "test", persona_id=pid)
+            fact_texts = [f[1] for f in context["facts"]]
+            self.assertTrue(any("High salience fact ZZZ" in t for t in fact_texts))
+            if fid:
+                delete_fact(fid)
+        finally:
+            delete_persona(pid)
+
+    def test_low_salience_fact_excluded(self):
+        """Facts linked to low-salience topics should be excluded."""
+        pid = create_persona(self.user_id, "ctx_sal_low", "SalLow")
+        try:
+            fid = store_fact(self.user_id, "Low salience excluded ZZZ", tags=["lowsal"])
+            link_fact_to_topics(self.user_id, fid, ["lowsal"])
+            bump_salience(self.user_id, pid, ["lowsal"])  # single bump = ~0.1
+            context = build_context(self.user_id, "test", persona_id=pid)
+            fact_texts = [f[1] for f in context["facts"]]
+            self.assertFalse(any("Low salience excluded ZZZ" in t for t in fact_texts))
+            if fid:
+                delete_fact(fid)
+        finally:
+            delete_persona(pid)
 
 
 if __name__ == "__main__":

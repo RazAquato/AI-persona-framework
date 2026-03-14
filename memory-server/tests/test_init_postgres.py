@@ -32,6 +32,9 @@ class TestPostgresInit(unittest.TestCase):
             'emotion_history',
             'knowledge_domains',
             'session_groups',
+            'topics',
+            'topic_salience',
+            'fact_topics',
         }
 
         self.cur.execute("""
@@ -56,6 +59,9 @@ class TestPostgresInit(unittest.TestCase):
             'emotion_history',
             'knowledge_domains',
             'session_groups',
+            'topics',
+            'topic_salience',
+            'fact_topics',
         }
 
         self.cur.execute("""

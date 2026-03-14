@@ -37,7 +37,10 @@ For those who hyperfocus on topics that go dormant, the system acts as a searcha
 - **Image generation** — ComfyUI integration with per-user/per-persona output folders
 - **Model hot-swap** — switch LLM models from the web UI (kills/restarts llama-server)
 - **Cookie-based auth** — PBKDF2 password hashing, HMAC-signed session cookies, full user isolation
-- **Web UI** — dark-themed chat interface with sidebar, session history, persona selector, model switcher
+- **Session groups (folders)** — organize chats into named folders per persona, with drag/move and right-click context menus
+- **Session archiving** — soft-delete hides old chats from the UI without breaking references
+- **Topic registry + salience tracking** — first-class topics with per-persona salience that rises on mention and decays over time; sticky topics (family) never fully fade; salience-filtered context builder surfaces relevant facts first
+- **Web UI** — dark-themed chat interface with sidebar, session history, persona selector, model switcher, folder management
 - **CLI chat** — terminal interface with `--persona`, `--nsfw`, `--incognito`, `--show-emotions` flags
 - **Echo MVP** — prompt-based personality simulation from conversation history corpus
 
@@ -67,6 +70,7 @@ User input
 | Semantic search | Qdrant (384-dim) | Similar past messages via embeddings |
 | Structured facts | PostgreSQL | Identity + emotional tier facts with tags, valence, confidence |
 | Topic graph | Neo4j | Topic relationships, cross-conversation links |
+| Topic salience | PostgreSQL | Per-persona topic importance with decay |
 | User emotions | PostgreSQL (JSONB) | Per-message 18-dim emotion vectors |
 | Persona emotions | PostgreSQL (JSONB) | Per-user-per-persona emotional state + history |
 
@@ -126,7 +130,7 @@ python3 LLM-client/interface/cli_chat.py --persona girlfriend --show-emotions
 ### Tests
 
 ```bash
-python3 test_all_python_code.py    # 433 tests across all modules
+python3 test_all_python_code.py    # 503 tests across all modules
 ```
 
 ---
@@ -150,7 +154,7 @@ AI-persona-framework/
 │   │   ├── model_configs.yaml     # LLM model definitions (paths, VRAM, ctx)
 │   │   └── personality_config.json # Default persona definitions
 │   ├── load_LLM.py                # Bootstraps llama-server with CUDA
-│   └── tests/                     # 87 tests
+│   └── tests/                     # 88 tests
 │
 ├── memory-server/                 # Memory backends and persistence
 │   ├── memory/
@@ -161,6 +165,7 @@ AI-persona-framework/
 │   │   ├── emotion_store.py       # User emotion vectors per message
 │   │   ├── persona_emotion_store.py # Persona emotional state per user
 │   │   ├── persona_store.py       # Persona CRUD (DB-backed)
+│   │   ├── topic_store.py         # Topic registry, salience tracking, decay
 │   │   ├── context_builder.py     # Aggregates all memory layers for prompt
 │   │   ├── buffer.py              # In-memory conversation buffer
 │   │   └── user_store.py          # User accounts
@@ -170,9 +175,10 @@ AI-persona-framework/
 │   │   └── traits_extractor.py    # Stub — personality trait extraction
 │   ├── scripts/
 │   │   ├── init_postgres.py       # DB schema setup
+│   │   ├── nightly_salience_decay.py # Cron: time-based salience decay
 │   │   ├── sync_mealie.py         # CLI: monthly Mealie recipe sync
 │   │   └── sync_immich.py         # CLI: monthly Immich photo sync
-│   └── tests/                     # 150 tests
+│   └── tests/                     # 207 tests
 │
 ├── shared/                        # Cross-package utilities
 │   ├── analysis/
@@ -185,7 +191,7 @@ AI-persona-framework/
 │   │   ├── image_orchestrator.py  # ComfyUI bridge
 │   │   ├── mealie_sync.py         # Mealie recipe/meal plan adapter
 │   │   └── immich_sync.py         # Immich photo archive adapter
-│   └── tests/                     # 196 tests
+│   └── tests/                     # 208 tests
 │
 ├── scripts/
 │   └── cron_sync_adapters.sh      # Monthly cron: Mealie + Immich sync
@@ -198,13 +204,12 @@ AI-persona-framework/
 
 ## Status
 
-**Beta** — core conversation pipeline, memory system, web UI, auth, emotions, knowledge extraction, external adapters, and model switching are all functional with 433 passing tests.
+**Beta** — core conversation pipeline, memory system, web UI, auth, emotions, knowledge extraction, external adapters, model switching, session folders, and topic salience tracking are all functional with 503 passing tests.
 
-**In design:** Topic-emotion architecture with per-persona salience tracking, temporal pattern recognition, reflection agent, and persona autonomy (personas develop their own opinions rather than mirroring the user).
+**Completed:** Session groups/folders, session archiving, topic registry with per-persona salience tracking (diminishing-returns bump, time-based decay, sticky topics, salience-filtered context builder).
 
 **Roadmap:**
-- Per-persona fact scoping (stop oversharing between personas)
-- Topic salience with decay (surface relevant facts, not everything)
+- User emotion classification per topic (topic-level emotional nuance)
 - Nightly reflection agent (pattern detection in temporal data)
 - Persona topic emotions (autonomous, non-compliant personality development)
 - Additional data adapters (Fitbit, ChatGPT history import, document ingestion)

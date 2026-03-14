@@ -60,6 +60,7 @@ from memory.persona_emotion_store import load_persona_emotion, save_persona_emot
 from memory.persona_store import get_persona
 from memory.fact_store import store_fact, store_fact_blobs
 from memory.topic_graph import create_topic_relation, link_all_topics, create_entity, link_entity_to_topic, ingest_extracted_knowledge
+from memory.topic_store import bump_salience, boost_group_salience
 from memory.buffer import conversation_buffer
 from echo.corpus_builder import build_corpus
 from echo.traits_extractor import extract_traits
@@ -117,6 +118,21 @@ def run_conversation_turn(
 
     memory_scope = persona.get("memory_scope", None)
     domain_access = persona.get("domain_access", None)
+
+    # 2b. Boost group salience if session is in a folder
+    if persona_id and not incognito:
+        try:
+            from memory.chat_store import get_connection as _get_chat_conn
+            _conn = _get_chat_conn()
+            with _conn.cursor() as _cur:
+                _cur.execute("SELECT group_id FROM chat_sessions WHERE id = %s;", (session_id,))
+                _row = _cur.fetchone()
+                group_id = _row[0] if _row else None
+            _conn.close()
+            if group_id:
+                boost_group_salience(user_id, persona_id, group_id)
+        except Exception:
+            pass  # non-critical
 
     # 3. Build memory context with domain + persona filtering
     context = build_context(user_id, user_input, memory_scope=memory_scope,
@@ -337,6 +353,11 @@ def run_conversation_turn(
 
         # 15c. Populate Neo4j topic graph + entity nodes
         ingest_extracted_knowledge(user_id, extracted)
+
+        # 15d. Bump topic salience for detected topics
+        topic_names = [t["topic"] for t in extracted.get("topics", [])]
+        if topic_names and persona_id:
+            bump_salience(user_id, persona_id, topic_names)
 
     # 16. Update conversation buffer
     conversation_buffer.add_message(user_id, session_id, "user", user_input)

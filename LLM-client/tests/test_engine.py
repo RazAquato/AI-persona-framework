@@ -38,6 +38,8 @@ ENGINE_PATCHES = [
     patch("core.engine.store_emotion_vector"),
     patch("core.engine.get_last_session_for_persona", return_value=None),
     patch("core.engine.start_chat_session", return_value=1),
+    patch("core.engine.bump_salience"),
+    patch("core.engine.boost_group_salience"),
 ]
 
 

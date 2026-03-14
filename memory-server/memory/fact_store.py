@@ -194,7 +194,35 @@ def store_fact_blobs(user_id: int, blobs: list, source_type: str = None,
                     blob.get("domain"),
                     blob.get("persona_id"),
                 ))
-                ids.append(cur.fetchone()[0])
+                fact_id = cur.fetchone()[0]
+                ids.append(fact_id)
+
+                # Link fact to topics via tags
+                tags = blob.get("tags")
+                if tags and fact_id:
+                    for tag in tags:
+                        if not tag or not tag.strip():
+                            continue
+                        tag_name = tag.lower().strip()
+                        # Get or create topic
+                        cur.execute(
+                            "SELECT id FROM topics WHERE user_id = %s AND name = %s;",
+                            (user_id, tag_name),
+                        )
+                        trow = cur.fetchone()
+                        if trow:
+                            topic_id = trow[0]
+                        else:
+                            cur.execute(
+                                "INSERT INTO topics (user_id, name) VALUES (%s, %s) RETURNING id;",
+                                (user_id, tag_name),
+                            )
+                            topic_id = cur.fetchone()[0]
+                        cur.execute("""
+                            INSERT INTO fact_topics (fact_id, topic_id)
+                            VALUES (%s, %s) ON CONFLICT DO NOTHING;
+                        """, (fact_id, topic_id))
+
         conn.commit()
         return ids
     finally:
