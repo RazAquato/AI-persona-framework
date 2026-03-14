@@ -52,7 +52,7 @@ load_dotenv(dotenv_path=SHARED_ENV)
 load_dotenv(dotenv_path=LOCAL_ENV, override=True)
 
 # Imports — after path setup
-from memory.chat_store import get_last_session, start_chat_session, log_chat_message, get_chat_messages
+from memory.chat_store import get_last_session, get_last_session_for_persona, start_chat_session, log_chat_message, get_chat_messages
 from memory.context_builder import build_context
 from memory.vector_store import store_embedding
 from memory.emotion_store import store_emotion_vector
@@ -102,8 +102,10 @@ def run_conversation_turn(
     if not persona:
         raise ValueError(f"Persona {persona_id} not found")
 
-    # 2. Session management
-    if session_id is None:
+    # 2. Session management (persona-aware: never resume another persona's session)
+    if session_id is None and persona_id is not None:
+        session_id = get_last_session_for_persona(user_id, persona_id)
+    elif session_id is None:
         session_id = get_last_session(user_id)
     if session_id is None:
         session_id = start_chat_session(user_id, persona_id,
@@ -277,9 +279,11 @@ def run_conversation_turn(
             vector=embedded_input,
             metadata={
                 "user_id": user_id,
+                "persona_id": persona_id,
                 "session_id": session_id,
                 "text": user_input,
                 "role": "user",
+                "memory_class": "session_memory",
             },
         )
 

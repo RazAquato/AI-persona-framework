@@ -59,29 +59,39 @@ def store_embedding(vector: list, metadata: dict) -> str:
 
     return point_id
 
-def search_similar_vectors(query_vector: list, top_k: int = 5, filters: dict = None):
+def search_similar_vectors(query_vector: list, top_k: int = 5, user_id: int = None,
+                           filters: dict = None):
     """
     Searches for the top-K most similar vectors to the query vector.
 
     Args:
         query_vector (list): Embedding vector to search with.
         top_k (int): Number of top matches to return.
-        filters (dict, optional): Metadata filters for narrowing results.
+        user_id (int): Required. Filters results to this user only.
+        filters (dict, optional): Additional metadata filters for narrowing results.
 
     Returns:
         list: List of search results with score and payload.
     """
-    query_filter = None
-    if filters:
-        query_filter = models.Filter(
-            must=[
-                models.FieldCondition(
-                    key=key,
-                    match=models.MatchValue(value=value)
-                )
-                for key, value in filters.items()
-            ]
+    if user_id is None:
+        raise ValueError("user_id is required for vector search (memory isolation)")
+
+    # Build filter conditions — always include user_id
+    conditions = [
+        models.FieldCondition(
+            key="user_id",
+            match=models.MatchValue(value=user_id)
         )
+    ]
+    if filters:
+        conditions.extend(
+            models.FieldCondition(
+                key=key,
+                match=models.MatchValue(value=value)
+            )
+            for key, value in filters.items()
+        )
+    query_filter = models.Filter(must=conditions)
 
     results = client.query_points(
         collection_name=QDRANT_COLLECTION,

@@ -85,15 +85,16 @@ class TestMemoryFlow(unittest.TestCase):
     def test_embedding_and_qdrant(self):
         embedding = embed_text(self.sample_text)
         metadata = {
+            "user_id": self.test_user_id,
             "role": "user",
             "agent": self.agent,
             "topics": ["hiking", "nature"],
-            "joy_level": 0.95
+            "memory_class": "session_memory",
         }
         point_id = store_embedding(embedding, metadata)
         self.assertIsNotNone(point_id)
 
-        results = search_similar_vectors(embedding, top_k=1)
+        results = search_similar_vectors(embedding, top_k=1, user_id=self.test_user_id)
         self.assertGreater(len(results), 0)
         print("Qdrant result payload:", results[0].payload)
 

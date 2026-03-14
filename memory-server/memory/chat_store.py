@@ -126,6 +126,27 @@ def get_last_session(user_id: int):
         conn.close()
 
 
+def get_last_session_for_persona(user_id: int, persona_id: int):
+    """
+    Get the most recent non-incognito session ID for a user+persona pair.
+    Returns None if no matching session exists.
+    """
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id FROM chat_sessions
+                WHERE user_id = %s AND persona_id = %s
+                  AND (incognito IS NULL OR incognito = FALSE)
+                ORDER BY start_time DESC
+                LIMIT 1;
+            """, (user_id, persona_id))
+            row = cur.fetchone()
+            return row[0] if row else None
+    finally:
+        conn.close()
+
+
 def list_sessions(user_id: int, limit: int = 50):
     """
     List all sessions for a user with preview info.

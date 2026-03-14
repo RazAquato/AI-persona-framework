@@ -64,22 +64,38 @@ class TestTopicGraph(unittest.TestCase):
         create_topic_relation(self.test_user_id, self.topic1, {"joy_level": 0.8})
         create_topic_relation(self.test_user_id, self.topic2, {"joy_level": 0.5})
 
-        # Query related to topic1 -> should include topic2
-        related = get_related_topics(self.topic1)
+        # Query related to topic1 (scoped to user) -> should include topic2
+        related = get_related_topics(self.topic1, user_id=self.test_user_id)
         self.assertIn(self.topic2, related)
 
     def test_multiple_topic_relations(self):
         create_topic_relation(self.test_user_id, self.topic2, {"joy_level": 0.6})
         create_topic_relation(self.test_user_id, self.topic3, {"joy_level": 0.4})
 
-        related = get_related_topics(self.topic2)
+        related = get_related_topics(self.topic2, user_id=self.test_user_id)
         self.assertTrue(self.topic3 in related or self.topic2 in related)
 
     def test_related_topics_empty(self):
         unrelated_topic = "unknown_topic"
-        related = get_related_topics(unrelated_topic)
+        related = get_related_topics(unrelated_topic, user_id=self.test_user_id)
         self.assertIsInstance(related, list)
         self.assertEqual(len(related), 0)
+
+    def test_related_topics_cross_user_isolation(self):
+        """Topics discussed by user A must not leak into user B's related topics."""
+        other_user = "isolation_test_user_xyz"
+        isolated_topic = "isolation_topic_a"
+        isolated_topic_b = "isolation_topic_b"
+        create_topic_relation(other_user, isolated_topic, {})
+        create_topic_relation(other_user, isolated_topic_b, {})
+        # User B should NOT see other_user's topics
+        related = get_related_topics(isolated_topic, user_id=self.test_user_id)
+        self.assertNotIn(isolated_topic_b, related)
+        # Cleanup
+        with self.driver.session() as session:
+            session.run("MATCH (u:User {id: $uid}) DETACH DELETE u", {"uid": other_user})
+            session.run("MATCH (t:Topic) WHERE t.name IN [$a, $b] DETACH DELETE t",
+                        {"a": isolated_topic, "b": isolated_topic_b})
 
     def test_create_relation_with_minimal_metadata(self):
         create_topic_relation(self.test_user_id, "minimal_topic", {})

@@ -48,12 +48,14 @@ class TestContextBuilder(unittest.TestCase):
         # Seed fact
         store_fact(cls.user_id, "User enjoys rock climbing", tags=["outdoors", "hobby"], relevance_score=0.9)
 
-        # Seed vector
+        # Seed vector (must include user_id for isolation filter)
         sample_embedding = [0.01] * 384
         store_embedding(sample_embedding, {
+            "user_id": cls.user_id,
             "agent": "maya",
             "role": "user",
-            "topics": ["climbing", "adventure"]
+            "topics": ["climbing", "adventure"],
+            "memory_class": "session_memory",
         })
 
         # Seed topic link

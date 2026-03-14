@@ -25,10 +25,12 @@ FAKE_EMOTION_STATE = {
 
 class TestRouter(unittest.TestCase):
 
+    @patch("core.engine.start_chat_session", return_value=1)
+    @patch("core.engine.get_last_session_for_persona", return_value=None)
     @patch("core.engine.save_persona_emotion")
     @patch("core.engine.load_persona_emotion", return_value=FAKE_EMOTION_STATE)
     @patch("core.engine.get_persona", return_value=FAKE_PERSONA)
-    def test_non_tool_input(self, mock_persona, mock_load_emo, mock_save_emo):
+    def test_non_tool_input(self, *mocks):
         input_text = "Hello, how are you?"
         response = router.handle_user_input(input_text, persona_id=1)
         self.assertIsInstance(response, str)

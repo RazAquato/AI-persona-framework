@@ -24,20 +24,37 @@ class TestVectorStore(unittest.TestCase):
     def setUp(self):
         # Create a random but deterministic fake vector (384 dims)
         self.vector = [round(random.uniform(-1, 1), 5) for _ in range(384)]
+        self.user_id = 9999
         self.metadata = {
+            "user_id": self.user_id,
             "role": "user",
             "agent": "test-agent",
             "topics": ["vector_test"],
-            "joy_level": 0.8
+            "memory_class": "session_memory",
         }
 
     def test_store_and_search_embedding(self):
         point_id = store_embedding(self.vector, self.metadata)
         self.assertIsInstance(point_id, str)
-        
-        results = search_similar_vectors(self.vector, top_k=1)
+
+        results = search_similar_vectors(self.vector, top_k=1, user_id=self.user_id)
         self.assertGreaterEqual(len(results), 1)
         self.assertEqual(results[0].payload["agent"], "test-agent")
+
+    def test_search_requires_user_id(self):
+        """search_similar_vectors must reject calls without user_id."""
+        with self.assertRaises(ValueError):
+            search_similar_vectors(self.vector, top_k=1)
+
+    def test_search_isolation_between_users(self):
+        """Vectors stored for user A must not appear in user B's search."""
+        vec_a = [round(random.uniform(-1, 1), 5) for _ in range(384)]
+        store_embedding(vec_a, {"user_id": 11111, "role": "user", "text": "user A data"})
+
+        results_b = search_similar_vectors(vec_a, top_k=5, user_id=22222)
+        user_ids = [r.payload.get("user_id") for r in results_b]
+        self.assertNotIn(11111, user_ids)
+
 
 if __name__ == "__main__":
     unittest.main()

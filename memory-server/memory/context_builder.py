@@ -50,8 +50,8 @@ def build_context(user_id: int, input_text: str, top_k: int = 5,
     """
     embedded = embed_text(input_text)
 
-    # Retrieve top vector matches from Qdrant
-    vector_hits = search_similar_vectors(embedded, top_k=top_k)
+    # Retrieve top vector matches from Qdrant (filtered to this user)
+    vector_hits = search_similar_vectors(embedded, top_k=top_k, user_id=user_id)
     vector_results = [
         {
             "payload": hit.payload,
@@ -66,11 +66,11 @@ def build_context(user_id: int, input_text: str, top_k: int = 5,
     # Get user's top topics for context
     user_topics = get_user_topics(user_id, limit=10)
 
-    # Use topic links if vector matches have topics
+    # Use topic links if vector matches have topics (scoped to this user)
     related_topics = set()
     for hit in vector_hits:
         for topic in hit.payload.get("topics", []):
-            related_topics.update(get_related_topics(topic))
+            related_topics.update(get_related_topics(topic, user_id=user_id))
 
     return {
         "facts": user_facts,

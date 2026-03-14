@@ -71,16 +71,26 @@ def create_topic_relation(user_id: int, topic: str, emotion: dict = None):
             })
 
 
-def get_related_topics(topic: str):
+def get_related_topics(topic: str, user_id: int = None):
     """
-    Retrieve other topics discussed by users who also discussed the given topic.
+    Retrieve other topics related to the given topic.
+    When user_id is provided, only returns topics discussed by that user
+    (prevents cross-user memory leakage).
     """
     with get_driver() as driver:
         with driver.session() as session:
-            result = session.run("""
-                MATCH (:Topic {name: $topic})<-[:DISCUSSED]-(u:User)-[:DISCUSSED]->(related:Topic)
-                RETURN DISTINCT related.name AS topic
-            """, {"topic": topic})
+            if user_id is not None:
+                result = session.run("""
+                    MATCH (u:User {id: $user_id})-[:DISCUSSED]->(:Topic {name: $topic})
+                    MATCH (u)-[:DISCUSSED]->(related:Topic)
+                    WHERE related.name <> $topic
+                    RETURN DISTINCT related.name AS topic
+                """, {"topic": topic, "user_id": user_id})
+            else:
+                result = session.run("""
+                    MATCH (:Topic {name: $topic})<-[:DISCUSSED]-(u:User)-[:DISCUSSED]->(related:Topic)
+                    RETURN DISTINCT related.name AS topic
+                """, {"topic": topic})
             topics = [record["topic"] for record in result]
         return topics
 

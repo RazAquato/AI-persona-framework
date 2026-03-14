@@ -12,6 +12,7 @@ from memory.chat_store import (
     log_chat_message,
     get_chat_messages,
     get_last_session,
+    get_last_session_for_persona,
     list_sessions
 )
 
@@ -158,6 +159,53 @@ class TestChatStore(unittest.TestCase):
         self.assertIn("nsfw_mode", found[0])
         self.assertTrue(found[0]["incognito"])
         self.assertTrue(found[0]["nsfw_mode"])
+
+    def test_get_last_session_for_persona(self):
+        """Should return the most recent session for a specific persona."""
+        sid = start_chat_session(self.user_id, persona_id=self.persona_id)
+        last = get_last_session_for_persona(self.user_id, self.persona_id)
+        self.assertEqual(last, sid)
+
+    def test_get_last_session_for_persona_isolation(self):
+        """Sessions for persona A must not be returned when querying persona B."""
+        # Create a second persona
+        self.cur.execute("""
+            INSERT INTO user_personalities (user_id, slug, name, system_prompt, memory_scope)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING id;
+        """, (self.user_id, "test_chat_other", "OtherPersona", "Other.", '{"tier1": true, "tier2": "all", "tier3": "private"}'))
+        other_persona_id = self.cur.fetchone()[0]
+        self.conn.commit()
+
+        start_chat_session(self.user_id, persona_id=self.persona_id)
+        last = get_last_session_for_persona(self.user_id, other_persona_id)
+        self.assertIsNone(last)
+
+        # Create a session for the other persona and confirm it's returned
+        sid_other = start_chat_session(self.user_id, persona_id=other_persona_id)
+        last = get_last_session_for_persona(self.user_id, other_persona_id)
+        self.assertEqual(last, sid_other)
+
+        # Cleanup
+        self.cur.execute("DELETE FROM chat_sessions WHERE persona_id = %s;", (other_persona_id,))
+        self.cur.execute("DELETE FROM user_personalities WHERE id = %s;", (other_persona_id,))
+        self.conn.commit()
+
+    def test_get_last_session_for_persona_skips_incognito(self):
+        """Incognito sessions should not be returned by get_last_session_for_persona."""
+        start_chat_session(self.user_id, persona_id=self.persona_id, incognito=True)
+        last = get_last_session_for_persona(self.user_id, self.persona_id)
+        # Should return an earlier non-incognito session or None
+        if last is not None:
+            # Verify it's not the incognito one
+            sessions = list_sessions(self.user_id)
+            found = [s for s in sessions if s["id"] == last]
+            self.assertFalse(found[0]["incognito"])
+
+    def test_get_last_session_for_persona_missing(self):
+        """Should return None for a persona with no sessions."""
+        last = get_last_session_for_persona(self.user_id, 999888)
+        self.assertIsNone(last)
 
 
 if __name__ == "__main__":
