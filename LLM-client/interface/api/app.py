@@ -50,7 +50,12 @@ from typing import Optional
 from core.engine import run_conversation_turn
 from core.router import is_tool_command, parse_tool_command
 from core.auth import hash_password, verify_password, create_auth_cookie, verify_auth_cookie
-from memory.chat_store import list_sessions, start_chat_session, get_chat_messages
+from memory.chat_store import (
+    list_sessions, start_chat_session, get_chat_messages,
+    archive_session, unarchive_session,
+    create_session_group, list_session_groups, rename_session_group,
+    delete_session_group, move_session_to_group, get_session_group_owner,
+)
 from memory.user_store import (
     create_user, get_user_by_name, get_user_by_id, get_session_owner,
 )
@@ -245,6 +250,10 @@ async def chat(req: ChatRequest, user_id: int = Depends(get_current_user)):
         if tr.success and tr.result and isinstance(tr.result, dict):
             images.extend(tr.result.get("images", []))
 
+    # Strip [Image: ...] markers from reply text — images are served via the images field
+    if images:
+        reply = re.sub(r'\[Image:\s*[^\]]+\]', '', reply).strip()
+
     return ChatResponse(
         reply=reply,
         images=images,
@@ -412,19 +421,21 @@ async def personas_update_domains(persona_id: int, req: DomainAccessRequest,
 async def sessions(user_id: int = Depends(get_current_user)):
     """List sessions for the authenticated user, grouped by persona."""
     rows = list_sessions(user_id, limit=100)
+    groups = list_session_groups(user_id)
     grouped = {}
     for s in rows:
         key = s.get("persona_slug") or str(s.get("persona_id") or "unknown")
         if key not in grouped:
             grouped[key] = []
         grouped[key].append(s)
-    return {"sessions": grouped}
+    return {"sessions": grouped, "groups": groups}
 
 
 class NewSessionRequest(BaseModel):
     persona_id: int
     nsfw_mode: bool = False
     incognito: bool = False
+    group_id: Optional[int] = None
 
 
 @app.post("/sessions/new")
@@ -433,8 +444,13 @@ async def new_session(req: NewSessionRequest, user_id: int = Depends(get_current
     persona = get_persona(req.persona_id)
     if not persona or persona["user_id"] != user_id:
         raise HTTPException(status_code=403, detail="Persona does not belong to you")
+    if req.group_id is not None:
+        group_owner = get_session_group_owner(req.group_id)
+        if group_owner != user_id:
+            raise HTTPException(status_code=403, detail="Group does not belong to you")
     sid = start_chat_session(user_id, req.persona_id,
-                             incognito=req.incognito, nsfw_mode=req.nsfw_mode)
+                             incognito=req.incognito, nsfw_mode=req.nsfw_mode,
+                             group_id=req.group_id)
     return {"session_id": sid, "persona_id": req.persona_id,
             "persona_name": persona["name"],
             "incognito": req.incognito, "nsfw_mode": req.nsfw_mode}
@@ -455,6 +471,92 @@ async def session_messages(session_id: int, user_id: int = Depends(get_current_u
             "content": r[2],
         })
     return {"messages": messages}
+
+
+# --- Session archive ---
+
+@app.put("/sessions/{session_id}/archive")
+async def archive_session_endpoint(session_id: int, user_id: int = Depends(get_current_user)):
+    """Archive a session (soft delete — hidden from UI but data preserved)."""
+    owner = get_session_owner(session_id)
+    if owner != user_id:
+        raise HTTPException(status_code=403, detail="Session does not belong to you")
+    archive_session(session_id)
+    return {"ok": True}
+
+
+@app.put("/sessions/{session_id}/unarchive")
+async def unarchive_session_endpoint(session_id: int, user_id: int = Depends(get_current_user)):
+    """Restore an archived session."""
+    owner = get_session_owner(session_id)
+    if owner != user_id:
+        raise HTTPException(status_code=403, detail="Session does not belong to you")
+    unarchive_session(session_id)
+    return {"ok": True}
+
+
+@app.put("/sessions/{session_id}/group")
+async def set_session_group(session_id: int, group_id: Optional[int] = None,
+                            user_id: int = Depends(get_current_user)):
+    """Move a session into a group, or ungroup it (group_id=null)."""
+    owner = get_session_owner(session_id)
+    if owner != user_id:
+        raise HTTPException(status_code=403, detail="Session does not belong to you")
+    if group_id is not None:
+        group_owner = get_session_group_owner(group_id)
+        if group_owner != user_id:
+            raise HTTPException(status_code=403, detail="Group does not belong to you")
+    move_session_to_group(session_id, group_id)
+    return {"ok": True}
+
+
+# --- Session groups ---
+
+class SessionGroupRequest(BaseModel):
+    name: str
+    persona_id: int
+
+
+class RenameGroupRequest(BaseModel):
+    name: str
+
+
+@app.get("/session-groups")
+async def get_session_groups(persona_id: Optional[int] = None,
+                             user_id: int = Depends(get_current_user)):
+    """List session groups for the user, optionally filtered by persona."""
+    return {"groups": list_session_groups(user_id, persona_id=persona_id)}
+
+
+@app.post("/session-groups")
+async def create_group(req: SessionGroupRequest, user_id: int = Depends(get_current_user)):
+    """Create a new session group (project folder)."""
+    persona = get_persona(req.persona_id)
+    if not persona or persona["user_id"] != user_id:
+        raise HTTPException(status_code=403, detail="Persona does not belong to you")
+    gid = create_session_group(user_id, req.persona_id, req.name)
+    return {"id": gid, "name": req.name, "persona_id": req.persona_id}
+
+
+@app.put("/session-groups/{group_id}")
+async def rename_group(group_id: int, req: RenameGroupRequest,
+                       user_id: int = Depends(get_current_user)):
+    """Rename a session group."""
+    owner = get_session_group_owner(group_id)
+    if owner != user_id:
+        raise HTTPException(status_code=403, detail="Group does not belong to you")
+    rename_session_group(group_id, req.name)
+    return {"ok": True}
+
+
+@app.delete("/session-groups/{group_id}")
+async def delete_group(group_id: int, user_id: int = Depends(get_current_user)):
+    """Delete a session group. Sessions become ungrouped."""
+    owner = get_session_group_owner(group_id)
+    if owner != user_id:
+        raise HTTPException(status_code=403, detail="Group does not belong to you")
+    delete_session_group(group_id)
+    return {"ok": True}
 
 
 # --- Pages ---
@@ -604,6 +706,15 @@ CHAT_HTML = """<!DOCTYPE html>
   #session-list { flex: 1; overflow-y: auto; padding: 8px; }
   .persona-group { margin-bottom: 12px; }
   .persona-group-label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #667; padding: 8px 8px 4px; }
+  .folder-group { margin-bottom: 4px; }
+  .folder-header { display: flex; align-items: center; gap: 6px; padding: 6px 8px; cursor: pointer; font-size: 13px; color: #aab; border-radius: 4px; user-select: none; }
+  .folder-header:hover { background: #1a1a2e; }
+  .folder-header .folder-arrow { font-size: 10px; width: 12px; transition: transform 0.15s; }
+  .folder-header .folder-arrow.open { transform: rotate(90deg); }
+  .folder-header .folder-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .folder-header .folder-count { font-size: 11px; color: #556; }
+  .folder-contents { padding-left: 12px; }
+  .folder-contents.collapsed { display: none; }
   .session-item { padding: 10px 12px; border-radius: 6px; cursor: pointer; margin-bottom: 2px; font-size: 13px; line-height: 1.4; }
   .session-item:hover { background: #1a1a2e; }
   .session-item.active { background: #2a2a5a; }
@@ -613,6 +724,12 @@ CHAT_HTML = """<!DOCTYPE html>
   .badge { font-size: 10px; padding: 1px 5px; border-radius: 3px; margin-left: 4px; }
   .badge.incognito { background: #443; color: #aa9; }
   .badge.nsfw { background: #533; color: #c99; }
+
+  /* Context menu */
+  .ctx-menu { position: fixed; background: #1e1e3e; border: 1px solid #3a3a5a; border-radius: 6px; padding: 4px 0; min-width: 160px; z-index: 999; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+  .ctx-menu-item { padding: 8px 16px; cursor: pointer; font-size: 13px; color: #ccd; }
+  .ctx-menu-item:hover { background: #2a2a5a; }
+  .ctx-menu-sep { height: 1px; background: #3a3a5a; margin: 4px 0; }
 
   /* Main chat area */
   #main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
@@ -686,7 +803,10 @@ CHAT_HTML = """<!DOCTYPE html>
       <div id="domain-checkboxes"></div>
       <button id="save-domains-btn" onclick="saveDomains()">Save</button>
     </details>
-    <button id="new-chat-btn" onclick="newChat()">+ New Chat</button>
+    <div style="display:flex; gap:6px; margin-top:10px;">
+      <button id="new-chat-btn" onclick="newChat()" style="flex:1;">+ New Chat</button>
+      <button id="new-folder-btn" onclick="createFolder()" style="flex:0; padding:10px 12px; background:#3a3a6a; border:none; border-radius:6px; color:#ccc; font-size:13px; cursor:pointer;" title="New Folder">&#128193;</button>
+    </div>
   </div>
   <div id="session-list"></div>
 </div>
@@ -750,6 +870,8 @@ let sessionNsfw = false;
 let sessionIncognito = false;
 let personas = [];       // array of {id, slug, name, nsfw_capable, ...}
 let allSessions = {};    // grouped by persona_slug
+let allGroups = [];      // [{id, user_id, persona_id, name}]
+let selectedGroupId = null; // currently selected folder (for new chats)
 let availableModels = [];  // [{key, name, vram_gb, ctx_size}]
 let currentModelKey = null; // key of currently loaded model (matched from /model)
 
@@ -930,8 +1052,27 @@ async function loadPersonas() {
 async function loadSessions() {
   const resp = await authFetch('/sessions');
   const data = await resp.json();
-  allSessions = data.sessions;  // grouped by persona_slug
+  allSessions = data.sessions;
+  allGroups = data.groups || [];
   renderSessionList();
+}
+
+function makeSessionEl(s) {
+  const item = document.createElement('div');
+  item.className = 'session-item' + (s.id === sessionId ? ' active' : '') + (s.incognito ? ' incognito' : '');
+  item.onclick = () => resumeSession(s.id, s.persona_id, s.incognito, s.nsfw_mode);
+  item.oncontextmenu = (e) => { e.preventDefault(); showSessionCtx(e, s); };
+
+  const preview = s.last_user_msg || 'Empty session';
+  const time = s.last_time ? new Date(s.last_time).toLocaleString() : '';
+  const count = s.message_count || 0;
+  let badges = '';
+  if (s.incognito) badges += '<span class="badge incognito">incognito</span>';
+  if (s.nsfw_mode) badges += '<span class="badge nsfw">nsfw</span>';
+
+  item.innerHTML = '<div>' + escHtml(preview) + badges + '</div>'
+    + '<div class="session-meta">' + count + ' msgs' + (time ? ' &middot; ' + time : '') + '</div>';
+  return item;
 }
 
 function renderSessionList() {
@@ -939,7 +1080,7 @@ function renderSessionList() {
   const cp = currentPersona();
   const currentSlug = cp ? cp.slug : null;
 
-  // Collect all group keys, current persona's slug first
+  // Collect all group keys, current persona first
   const allKeys = Object.keys(allSessions);
   const ordered = [];
   if (currentSlug && allSessions[currentSlug]) ordered.push(currentSlug);
@@ -957,23 +1098,158 @@ function renderSessionList() {
     label.textContent = pInfo ? pInfo.name : slug;
     sessionListEl.appendChild(label);
 
-    for (const s of sessions) {
-      const item = document.createElement('div');
-      item.className = 'session-item' + (s.id === sessionId ? ' active' : '') + (s.incognito ? ' incognito' : '');
-      item.onclick = () => resumeSession(s.id, s.persona_id, s.incognito, s.nsfw_mode);
+    // Get folders for this persona
+    const pId = pInfo ? pInfo.id : null;
+    const folders = allGroups.filter(g => g.persona_id === pId);
 
-      const preview = s.last_user_msg || 'Empty session';
-      const time = s.last_time ? new Date(s.last_time).toLocaleString() : '';
-      const count = s.message_count || 0;
-      let badges = '';
-      if (s.incognito) badges += '<span class="badge incognito">incognito</span>';
-      if (s.nsfw_mode) badges += '<span class="badge nsfw">nsfw</span>';
+    // Render folders
+    for (const folder of folders) {
+      const folderSessions = sessions.filter(s => s.group_id === folder.id);
+      const folderDiv = document.createElement('div');
+      folderDiv.className = 'folder-group';
 
-      item.innerHTML = '<div>' + escHtml(preview) + badges + '</div>'
-        + '<div class="session-meta">' + count + ' msgs' + (time ? ' &middot; ' + time : '') + '</div>';
-      sessionListEl.appendChild(item);
+      const header = document.createElement('div');
+      header.className = 'folder-header';
+      header.oncontextmenu = (e) => { e.preventDefault(); showFolderCtx(e, folder); };
+
+      const arrow = document.createElement('span');
+      arrow.className = 'folder-arrow open';
+      arrow.textContent = '\u25B6';
+      const fname = document.createElement('span');
+      fname.className = 'folder-name';
+      fname.textContent = folder.name;
+      const fcount = document.createElement('span');
+      fcount.className = 'folder-count';
+      fcount.textContent = folderSessions.length;
+
+      header.appendChild(arrow);
+      header.appendChild(fname);
+      header.appendChild(fcount);
+
+      const contents = document.createElement('div');
+      contents.className = 'folder-contents';
+
+      header.onclick = () => {
+        arrow.classList.toggle('open');
+        contents.classList.toggle('collapsed');
+        selectedGroupId = arrow.classList.contains('open') ? folder.id : null;
+      };
+
+      for (const s of folderSessions) {
+        contents.appendChild(makeSessionEl(s));
+      }
+
+      folderDiv.appendChild(header);
+      folderDiv.appendChild(contents);
+      sessionListEl.appendChild(folderDiv);
+    }
+
+    // Ungrouped sessions
+    const ungrouped = sessions.filter(s => !s.group_id);
+    for (const s of ungrouped) {
+      sessionListEl.appendChild(makeSessionEl(s));
     }
   }
+}
+
+// --- Context menus ---
+
+function closeCtxMenu() {
+  const old = document.querySelector('.ctx-menu');
+  if (old) old.remove();
+}
+
+document.addEventListener('click', closeCtxMenu);
+
+function showCtxMenu(e, items) {
+  closeCtxMenu();
+  const menu = document.createElement('div');
+  menu.className = 'ctx-menu';
+  menu.style.left = e.clientX + 'px';
+  menu.style.top = e.clientY + 'px';
+  for (const item of items) {
+    if (item === 'sep') {
+      const sep = document.createElement('div');
+      sep.className = 'ctx-menu-sep';
+      menu.appendChild(sep);
+      continue;
+    }
+    const el = document.createElement('div');
+    el.className = 'ctx-menu-item';
+    el.textContent = item.label;
+    el.onclick = () => { closeCtxMenu(); item.action(); };
+    menu.appendChild(el);
+  }
+  document.body.appendChild(menu);
+}
+
+function showSessionCtx(e, session) {
+  const cp = currentPersona();
+  const folders = allGroups.filter(g => g.persona_id === session.persona_id);
+  const items = [];
+
+  // Move to folder submenu
+  if (folders.length > 0) {
+    for (const f of folders) {
+      if (f.id !== session.group_id) {
+        items.push({label: 'Move to: ' + f.name, action: () => moveToGroup(session.id, f.id)});
+      }
+    }
+    if (session.group_id) {
+      items.push({label: 'Remove from folder', action: () => moveToGroup(session.id, null)});
+    }
+    items.push('sep');
+  }
+
+  items.push({label: 'Archive', action: () => archiveChat(session.id)});
+  showCtxMenu(e, items);
+}
+
+function showFolderCtx(e, folder) {
+  showCtxMenu(e, [
+    {label: 'Rename', action: () => renameFolder(folder.id)},
+    {label: 'Delete folder', action: () => deleteFolder(folder.id)},
+  ]);
+}
+
+async function archiveChat(sid) {
+  await authFetch('/sessions/' + sid + '/archive', {method: 'PUT'});
+  loadSessions();
+}
+
+async function moveToGroup(sid, groupId) {
+  await authFetch('/sessions/' + sid + '/group?group_id=' + (groupId === null ? '' : groupId), {method: 'PUT'});
+  loadSessions();
+}
+
+async function createFolder() {
+  if (!currentPersonaId) return;
+  const name = prompt('Folder name:');
+  if (!name || !name.trim()) return;
+  await authFetch('/session-groups', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({name: name.trim(), persona_id: currentPersonaId}),
+  });
+  loadSessions();
+}
+
+async function renameFolder(gid) {
+  const name = prompt('New folder name:');
+  if (!name || !name.trim()) return;
+  await authFetch('/session-groups/' + gid, {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({name: name.trim()}),
+  });
+  loadSessions();
+}
+
+async function deleteFolder(gid) {
+  if (!confirm('Delete this folder? Sessions will be ungrouped, not deleted.')) return;
+  await authFetch('/session-groups/' + gid, {method: 'DELETE'});
+  selectedGroupId = null;
+  loadSessions();
 }
 
 const ALL_DOMAINS = ['family', 'physical', 'hobbies', 'work', 'emotional', 'memories', 'other'];
@@ -1038,13 +1314,15 @@ async function newChat() {
   if (!currentPersonaId) return;
   sessionNsfw = nsfwToggle.checked;
   sessionIncognito = incognitoToggle.checked;
+  const body = {
+    persona_id: currentPersonaId,
+    nsfw_mode: sessionNsfw, incognito: sessionIncognito,
+  };
+  if (selectedGroupId) body.group_id = selectedGroupId;
   const resp = await authFetch('/sessions/new', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({
-      persona_id: currentPersonaId,
-      nsfw_mode: sessionNsfw, incognito: sessionIncognito
-    })
+    body: JSON.stringify(body)
   });
   const data = await resp.json();
   sessionId = data.session_id;
@@ -1149,6 +1427,24 @@ async function sendMsg() {
 function addMsg(role, text, cls) {
   const empty = document.getElementById('empty-state');
   if (empty) empty.remove();
+
+  // Check for [Image: ...] markers in historical messages
+  const imgPattern = /\[Image:\s*([^\]]+)\]/g;
+  const match = text.match(imgPattern);
+  if (match && role === 'assistant') {
+    const cleanText = text.replace(imgPattern, '').trim();
+    let html = escHtml(cleanText);
+    for (const m of match) {
+      const paths = m.replace(/^\[Image:\s*/, '').replace(/\]$/, '').split(',');
+      for (const p of paths) {
+        const trimmed = p.trim();
+        const outputIdx = trimmed.indexOf('comfyui/output/');
+        const relPath = outputIdx >= 0 ? trimmed.substring(outputIdx + 'comfyui/output/'.length) : trimmed.split('/').pop();
+        html += '<img src="/image/' + relPath + '" alt="generated image">';
+      }
+    }
+    return addMsgHtml(role, html);
+  }
 
   const div = document.createElement('div');
   div.className = 'msg ' + role + (cls ? ' ' + cls : '');

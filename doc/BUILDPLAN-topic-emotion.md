@@ -127,6 +127,14 @@ later phases (topic salience, reflection) can leverage.
 - "New Chat" button uses current group if one is selected
 - Tests: new session respects group_id
 
+### Step 1B.5 — Session archiving
+- Add `archived BOOLEAN DEFAULT FALSE` column to `chat_sessions`
+- `list_sessions()` hides archived sessions by default (flag to include them)
+- API endpoint: `PUT /sessions/{id}/archive` and `PUT /sessions/{id}/unarchive`
+- Right-click context menu on sessions includes "Archive" option
+- Archived sessions are hidden from UI but all data preserved
+- Tests: archive/unarchive, hidden by default, visible with flag
+
 ---
 
 ## Phase 2: Topic Registry + Salience Tracking

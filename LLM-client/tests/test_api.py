@@ -111,8 +111,9 @@ class TestAPIEndpoints(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json()["model"], "offline")
 
+    @patch("interface.api.app.list_session_groups", return_value=[])
     @patch("interface.api.app.list_sessions")
-    def test_sessions_endpoint(self, mock_list):
+    def test_sessions_endpoint(self, mock_list, mock_groups):
         mock_list.return_value = [
             {"id": 1, "persona_id": 6, "persona_slug": "girlfriend", "persona_name": "Maya",
              "start_time": "2026-01-01T00:00:00",
@@ -127,6 +128,7 @@ class TestAPIEndpoints(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
         self.assertIn("sessions", data)
+        self.assertIn("groups", data)
         self.assertIn("girlfriend", data["sessions"])
         self.assertIn("debug", data["sessions"])
         mock_list.assert_called_once_with(9999, limit=100)
@@ -145,7 +147,7 @@ class TestAPIEndpoints(unittest.TestCase):
         self.assertEqual(data["persona_id"], 6)
         self.assertTrue(data["nsfw_mode"])
         self.assertFalse(data["incognito"])
-        mock_start.assert_called_once_with(9999, 6, incognito=False, nsfw_mode=True)
+        mock_start.assert_called_once_with(9999, 6, incognito=False, nsfw_mode=True, group_id=None)
 
     @patch("interface.api.app.get_persona")
     @patch("interface.api.app.start_chat_session")
@@ -157,7 +159,7 @@ class TestAPIEndpoints(unittest.TestCase):
         })
         data = resp.json()
         self.assertTrue(data["incognito"])
-        mock_start.assert_called_once_with(9999, 9, incognito=True, nsfw_mode=False)
+        mock_start.assert_called_once_with(9999, 9, incognito=True, nsfw_mode=False, group_id=None)
 
     @patch("interface.api.app.get_persona", return_value=FAKE_GIRLFRIEND)
     @patch("interface.api.app.start_chat_session", return_value=50)

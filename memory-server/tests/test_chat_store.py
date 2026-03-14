@@ -13,7 +13,15 @@ from memory.chat_store import (
     get_chat_messages,
     get_last_session,
     get_last_session_for_persona,
-    list_sessions
+    list_sessions,
+    archive_session,
+    unarchive_session,
+    create_session_group,
+    list_session_groups,
+    rename_session_group,
+    delete_session_group,
+    move_session_to_group,
+    get_session_group_owner,
 )
 
 
@@ -206,6 +214,128 @@ class TestChatStore(unittest.TestCase):
         """Should return None for a persona with no sessions."""
         last = get_last_session_for_persona(self.user_id, 999888)
         self.assertIsNone(last)
+
+    # --- Session archiving ---
+
+    def test_archive_session(self):
+        sid = start_chat_session(self.user_id, persona_id=self.persona_id)
+        archive_session(sid)
+        sessions = list_sessions(self.user_id)
+        found = [s for s in sessions if s["id"] == sid]
+        self.assertEqual(len(found), 0)
+
+    def test_archive_session_visible_with_flag(self):
+        sid = start_chat_session(self.user_id, persona_id=self.persona_id)
+        archive_session(sid)
+        sessions = list_sessions(self.user_id, include_archived=True)
+        found = [s for s in sessions if s["id"] == sid]
+        self.assertEqual(len(found), 1)
+        self.assertTrue(found[0]["archived"])
+
+    def test_unarchive_session(self):
+        sid = start_chat_session(self.user_id, persona_id=self.persona_id)
+        archive_session(sid)
+        unarchive_session(sid)
+        sessions = list_sessions(self.user_id)
+        found = [s for s in sessions if s["id"] == sid]
+        self.assertEqual(len(found), 1)
+        self.assertFalse(found[0]["archived"])
+
+    def test_list_sessions_includes_group_id(self):
+        sid = start_chat_session(self.user_id, persona_id=self.persona_id)
+        sessions = list_sessions(self.user_id)
+        found = [s for s in sessions if s["id"] == sid]
+        self.assertIn("group_id", found[0])
+
+    # --- Session groups ---
+
+    def test_create_session_group(self):
+        gid = create_session_group(self.user_id, self.persona_id, "Test Folder")
+        self.assertIsInstance(gid, int)
+        # Cleanup
+        self.cur.execute("DELETE FROM session_groups WHERE id = %s;", (gid,))
+        self.conn.commit()
+
+    def test_list_session_groups(self):
+        gid = create_session_group(self.user_id, self.persona_id, "List Test")
+        groups = list_session_groups(self.user_id)
+        found = [g for g in groups if g["id"] == gid]
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0]["name"], "List Test")
+        self.assertEqual(found[0]["persona_id"], self.persona_id)
+        # Cleanup
+        self.cur.execute("DELETE FROM session_groups WHERE id = %s;", (gid,))
+        self.conn.commit()
+
+    def test_list_session_groups_filter_by_persona(self):
+        gid = create_session_group(self.user_id, self.persona_id, "Persona Filter")
+        groups = list_session_groups(self.user_id, persona_id=self.persona_id)
+        found = [g for g in groups if g["id"] == gid]
+        self.assertEqual(len(found), 1)
+        groups_other = list_session_groups(self.user_id, persona_id=999888)
+        found_other = [g for g in groups_other if g["id"] == gid]
+        self.assertEqual(len(found_other), 0)
+        # Cleanup
+        self.cur.execute("DELETE FROM session_groups WHERE id = %s;", (gid,))
+        self.conn.commit()
+
+    def test_rename_session_group(self):
+        gid = create_session_group(self.user_id, self.persona_id, "Before")
+        rename_session_group(gid, "After")
+        groups = list_session_groups(self.user_id)
+        found = [g for g in groups if g["id"] == gid]
+        self.assertEqual(found[0]["name"], "After")
+        # Cleanup
+        self.cur.execute("DELETE FROM session_groups WHERE id = %s;", (gid,))
+        self.conn.commit()
+
+    def test_delete_session_group_ungroups_sessions(self):
+        gid = create_session_group(self.user_id, self.persona_id, "To Delete")
+        sid = start_chat_session(self.user_id, persona_id=self.persona_id, group_id=gid)
+        delete_session_group(gid)
+        sessions = list_sessions(self.user_id)
+        found = [s for s in sessions if s["id"] == sid]
+        self.assertEqual(len(found), 1)
+        self.assertIsNone(found[0]["group_id"])
+
+    def test_move_session_to_group(self):
+        gid = create_session_group(self.user_id, self.persona_id, "Target")
+        sid = start_chat_session(self.user_id, persona_id=self.persona_id)
+        move_session_to_group(sid, gid)
+        sessions = list_sessions(self.user_id)
+        found = [s for s in sessions if s["id"] == sid]
+        self.assertEqual(found[0]["group_id"], gid)
+        # Ungroup
+        move_session_to_group(sid, None)
+        sessions = list_sessions(self.user_id)
+        found = [s for s in sessions if s["id"] == sid]
+        self.assertIsNone(found[0]["group_id"])
+        # Cleanup
+        self.cur.execute("DELETE FROM session_groups WHERE id = %s;", (gid,))
+        self.conn.commit()
+
+    def test_get_session_group_owner(self):
+        gid = create_session_group(self.user_id, self.persona_id, "Owner Test")
+        owner = get_session_group_owner(gid)
+        self.assertEqual(owner, self.user_id)
+        self.assertIsNone(get_session_group_owner(999999))
+        # Cleanup
+        self.cur.execute("DELETE FROM session_groups WHERE id = %s;", (gid,))
+        self.conn.commit()
+
+    def test_start_session_with_group(self):
+        gid = create_session_group(self.user_id, self.persona_id, "Start In")
+        sid = start_chat_session(self.user_id, persona_id=self.persona_id, group_id=gid)
+        sessions = list_sessions(self.user_id)
+        found = [s for s in sessions if s["id"] == sid]
+        self.assertEqual(found[0]["group_id"], gid)
+        # Cleanup
+        self.cur.execute("DELETE FROM session_groups WHERE id = %s;", (gid,))
+        self.conn.commit()
+
+    def test_list_session_groups_empty(self):
+        groups = list_session_groups(999999)
+        self.assertEqual(groups, [])
 
 
 if __name__ == "__main__":

@@ -65,16 +65,29 @@ CREATE TABLE user_personalities (
 );
 """)
 
+# Session Groups (project folders)
+cur.execute("""
+CREATE TABLE session_groups (
+    id SERIAL PRIMARY KEY,
+    user_id INT REFERENCES users(id),
+    persona_id INT REFERENCES user_personalities(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+""")
+
 # Chat Sessions
 cur.execute("""
 CREATE TABLE chat_sessions (
     id SERIAL PRIMARY KEY,
     user_id INT REFERENCES users(id),
     persona_id INT REFERENCES user_personalities(id),
+    group_id INT REFERENCES session_groups(id) ON DELETE SET NULL,
     start_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     context_summary TEXT,
     incognito BOOLEAN DEFAULT FALSE,
-    nsfw_mode BOOLEAN DEFAULT FALSE
+    nsfw_mode BOOLEAN DEFAULT FALSE,
+    archived BOOLEAN DEFAULT FALSE
 );
 """)
 
