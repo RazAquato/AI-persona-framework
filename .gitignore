@@ -48,3 +48,6 @@ comfyui/
 
 # Archived dead code
 archive/
+
+# Claude Code project instructions (contains internal infra details)
+CLAUDE.md
