@@ -209,6 +209,20 @@ CREATE TABLE fact_topics (
 );
 """)
 
+# User-Topic Emotions (how the user feels about each topic)
+cur.execute("""
+CREATE TABLE user_topic_emotions (
+    id SERIAL PRIMARY KEY,
+    user_id INT REFERENCES users(id),
+    topic_id INT REFERENCES topics(id) ON DELETE CASCADE,
+    emotion TEXT NOT NULL,
+    intensity FLOAT DEFAULT 0.0,
+    source TEXT DEFAULT 'reflection',
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, topic_id, emotion)
+);
+""")
+
 # Emotional Relationships (per user + persona)
 cur.execute("""
 CREATE TABLE emotional_relationships (

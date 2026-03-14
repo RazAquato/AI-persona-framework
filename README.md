@@ -40,6 +40,7 @@ For those who hyperfocus on topics that go dormant, the system acts as a searcha
 - **Session groups (folders)** — organize chats into named folders per persona, with drag/move and right-click context menus
 - **Session archiving** — soft-delete hides old chats from the UI without breaking references
 - **Topic registry + salience tracking** — first-class topics with per-persona salience that rises on mention and decays over time; sticky topics (family) never fully fade; salience-filtered context builder surfaces relevant facts first
+- **Topic emotion classification** — nightly reflection job classifies how the user feels about each topic (love, frustration, etc.); emotion-aware prompt framing guides persona sensitivity
 - **Web UI** — dark-themed chat interface with sidebar, session history, persona selector, model switcher, folder management
 - **CLI chat** — terminal interface with `--persona`, `--nsfw`, `--incognito`, `--show-emotions` flags
 - **Echo MVP** — prompt-based personality simulation from conversation history corpus
@@ -71,6 +72,7 @@ User input
 | Structured facts | PostgreSQL | Identity + emotional tier facts with tags, valence, confidence |
 | Topic graph | Neo4j | Topic relationships, cross-conversation links |
 | Topic salience | PostgreSQL | Per-persona topic importance with decay |
+| Topic emotions | PostgreSQL | User's feelings per topic (18-dim, from reflection) |
 | User emotions | PostgreSQL (JSONB) | Per-message 18-dim emotion vectors |
 | Persona emotions | PostgreSQL (JSONB) | Per-user-per-persona emotional state + history |
 
@@ -130,7 +132,7 @@ python3 LLM-client/interface/cli_chat.py --persona girlfriend --show-emotions
 ### Tests
 
 ```bash
-python3 test_all_python_code.py    # 503 tests across all modules
+python3 test_all_python_code.py    # 527 tests across all modules
 ```
 
 ---
@@ -166,6 +168,7 @@ AI-persona-framework/
 │   │   ├── persona_emotion_store.py # Persona emotional state per user
 │   │   ├── persona_store.py       # Persona CRUD (DB-backed)
 │   │   ├── topic_store.py         # Topic registry, salience tracking, decay
+│   │   ├── topic_emotion_store.py # User emotion classification per topic
 │   │   ├── context_builder.py     # Aggregates all memory layers for prompt
 │   │   ├── buffer.py              # In-memory conversation buffer
 │   │   └── user_store.py          # User accounts
@@ -175,10 +178,11 @@ AI-persona-framework/
 │   │   └── traits_extractor.py    # Stub — personality trait extraction
 │   ├── scripts/
 │   │   ├── init_postgres.py       # DB schema setup
+│   │   ├── nightly_reflection.py  # Cron: topic emotion classification + decay
 │   │   ├── nightly_salience_decay.py # Cron: time-based salience decay
 │   │   ├── sync_mealie.py         # CLI: monthly Mealie recipe sync
 │   │   └── sync_immich.py         # CLI: monthly Immich photo sync
-│   └── tests/                     # 207 tests
+│   └── tests/                     # 231 tests
 │
 ├── shared/                        # Cross-package utilities
 │   ├── analysis/
@@ -204,12 +208,11 @@ AI-persona-framework/
 
 ## Status
 
-**Beta** — core conversation pipeline, memory system, web UI, auth, emotions, knowledge extraction, external adapters, model switching, session folders, and topic salience tracking are all functional with 503 passing tests.
+**Beta** — core conversation pipeline, memory system, web UI, auth, emotions, knowledge extraction, external adapters, model switching, session folders, topic salience tracking, and topic emotion classification are all functional with 527 passing tests.
 
-**Completed:** Session groups/folders, session archiving, topic registry with per-persona salience tracking (diminishing-returns bump, time-based decay, sticky topics, salience-filtered context builder).
+**Completed:** Session groups/folders, session archiving, topic registry with per-persona salience tracking, user emotion classification per topic with nightly reflection job and emotion-aware prompt framing.
 
 **Roadmap:**
-- User emotion classification per topic (topic-level emotional nuance)
 - Nightly reflection agent (pattern detection in temporal data)
 - Persona topic emotions (autonomous, non-compliant personality development)
 - Additional data adapters (Fitbit, ChatGPT history import, document ingestion)

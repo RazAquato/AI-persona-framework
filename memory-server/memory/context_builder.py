@@ -37,6 +37,7 @@ from memory.vector_store import search_similar_vectors
 from memory.fact_store import get_accessible_facts
 from memory.topic_graph import get_related_topics, get_user_topics
 from memory.topic_store import get_salient_fact_ids, get_persona_salience
+from memory.topic_emotion_store import get_user_topic_emotions
 
 SALIENCE_THRESHOLD = 0.2
 
@@ -63,7 +64,8 @@ def build_context(user_id: int, input_text: str, top_k: int = 5,
         domain_access: List of domain names this persona can see
 
     Returns:
-        dict with keys: facts, vectors, topics, user_topics, raw_input, embedded_input
+        dict with keys: facts, vectors, topics, user_topics, topic_emotions,
+                        raw_input, embedded_input
     """
     embedded = embed_text(input_text)
 
@@ -126,11 +128,15 @@ def build_context(user_id: int, input_text: str, top_k: int = 5,
         for topic in hit.payload.get("topics", []):
             related_topics.update(get_related_topics(topic, user_id=user_id))
 
+    # Get user's emotional profile per topic (from nightly reflection)
+    topic_emotions = get_user_topic_emotions(user_id, min_intensity=0.2)
+
     return {
         "facts": user_facts,
         "vectors": vector_results,
         "topics": list(related_topics),
         "user_topics": user_topics,
+        "topic_emotions": topic_emotions,
         "raw_input": input_text,
         "embedded_input": embedded,
     }

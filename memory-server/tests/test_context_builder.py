@@ -83,6 +83,7 @@ class TestContextBuilder(unittest.TestCase):
         self.assertIn("vectors", context)
         self.assertIn("topics", context)
         self.assertIn("user_topics", context)
+        self.assertIn("topic_emotions", context)
         self.assertIn("raw_input", context)
         self.assertIn("embedded_input", context)
 
@@ -90,6 +91,7 @@ class TestContextBuilder(unittest.TestCase):
         self.assertIsInstance(context["vectors"], list)
         self.assertIsInstance(context["topics"], list)
         self.assertIsInstance(context["user_topics"], list)
+        self.assertIsInstance(context["topic_emotions"], list)
         self.assertIsInstance(context["raw_input"], str)
         self.assertIsInstance(context["embedded_input"], list)
 

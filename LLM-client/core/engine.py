@@ -173,6 +173,7 @@ def run_conversation_turn(
         facts=context["facts"],
         similar_memories=context["vectors"],
         related_topics=context["topics"],
+        topic_emotions=context.get("topic_emotions", []),
         nsfw_mode=nsfw_mode,
         echo_prompt=echo_prompt,
     )

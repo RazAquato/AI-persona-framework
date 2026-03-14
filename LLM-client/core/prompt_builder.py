@@ -31,6 +31,7 @@ def build_system_prompt(
     facts: list = None,
     similar_memories: list = None,
     related_topics: list = None,
+    topic_emotions: list = None,
     nsfw_mode: bool = False,
     echo_prompt: str = None,
 ) -> str:
@@ -43,6 +44,7 @@ def build_system_prompt(
         facts: list of user fact tuples from fact_store [(id, text, tags, score), ...]
         similar_memories: list of dicts with payload/score from vector search
         related_topics: list of topic name strings from Neo4j
+        topic_emotions: list of dicts from topic_emotion_store [{topic_name, emotion, intensity}]
         echo_prompt: optional echo personality prompt (replaces persona identity when set)
 
     Returns:
@@ -107,7 +109,72 @@ def build_system_prompt(
             f"\n## Topics This User Is Interested In\n{topic_str}"
         )
 
+    # 6. User's emotional profile per topic
+    if topic_emotions:
+        emotion_lines = _format_topic_emotions(topic_emotions)
+        if emotion_lines:
+            parts.append(
+                "\n## How This User Feels About Topics\n"
+                + "\n".join(emotion_lines)
+            )
+            parts.append(
+                "Use this emotional awareness to guide your sensitivity. "
+                "Topics with negative emotions need empathy, not advice. "
+                "Do not mention that you 'know' their feelings — respond naturally."
+            )
+
     return "\n\n".join(parts)
+
+
+# Emotion categories for prompt framing
+_POSITIVE_EMOTIONS = {"love", "trust", "joy", "calm", "pride", "interest",
+                       "curiosity", "hope"}
+_NEGATIVE_EMOTIONS = {"fear", "sadness", "anger", "disgust", "revulsion",
+                       "shame", "guilt", "jealousy"}
+
+
+def _format_topic_emotions(topic_emotions: list) -> list:
+    """
+    Format topic emotions into prompt-friendly lines.
+    Groups emotions by topic and generates contextual framing.
+
+    Args:
+        topic_emotions: list of {topic_name, emotion, intensity, ...}
+
+    Returns:
+        list of formatted strings like:
+        "- Football: positive (joy 0.7, pride 0.5) — safe to reference naturally"
+    """
+    # Group by topic
+    by_topic = {}
+    for te in topic_emotions:
+        name = te["topic_name"]
+        if name not in by_topic:
+            by_topic[name] = []
+        by_topic[name].append((te["emotion"], te["intensity"]))
+
+    lines = []
+    for topic, emotions in sorted(by_topic.items()):
+        # Sort by intensity descending
+        emotions.sort(key=lambda x: -x[1])
+
+        pos = [(e, i) for e, i in emotions if e in _POSITIVE_EMOTIONS]
+        neg = [(e, i) for e, i in emotions if e in _NEGATIVE_EMOTIONS]
+
+        emotion_str = ", ".join(f"{e} {i:.1f}" for e, i in emotions[:3])
+
+        if neg and not pos:
+            framing = "approach with empathy if they bring it up"
+        elif pos and not neg:
+            framing = "safe to reference naturally"
+        elif neg and pos:
+            framing = "mixed feelings — approach with nuance"
+        else:
+            framing = "neutral"
+
+        lines.append(f"- {topic}: {emotion_str} — {framing}")
+
+    return lines[:10]  # cap to avoid prompt bloat
 
 
 def build_message_list(

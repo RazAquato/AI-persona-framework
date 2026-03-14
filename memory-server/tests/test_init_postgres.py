@@ -35,6 +35,7 @@ class TestPostgresInit(unittest.TestCase):
             'topics',
             'topic_salience',
             'fact_topics',
+            'user_topic_emotions',
         }
 
         self.cur.execute("""
@@ -62,6 +63,7 @@ class TestPostgresInit(unittest.TestCase):
             'topics',
             'topic_salience',
             'fact_topics',
+            'user_topic_emotions',
         }
 
         self.cur.execute("""
