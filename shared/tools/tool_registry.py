@@ -34,12 +34,16 @@ if ROOT not in sys.path:
     sys.path.append(ROOT)
 
 from shared.tools import image_gen
+from shared.tools.document_ingest import ingest_document
+from shared.tools.compress_tool import compress_sessions
 
 # ──────────────────────────────────────────────────────────────
 # Tool function registry: command name → callable
 # ──────────────────────────────────────────────────────────────
 TOOLS = {
     "generate_image": image_gen.generate,
+    "ingest_document": ingest_document,
+    "compress_sessions": compress_sessions,
 }
 
 # ──────────────────────────────────────────────────────────────
@@ -74,6 +78,41 @@ TOOL_DEFINITIONS = [
                     },
                 },
                 "required": ["prompt"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "ingest_document",
+            "description": (
+                "Read a text file and extract knowledge from it. Supports .txt, .md, "
+                ".json, and .jsonl files. Extracted facts, entities, and topics are "
+                "stored in the user's memory."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "file_path": {
+                        "type": "string",
+                        "description": "Path to the file to ingest.",
+                    },
+                },
+                "required": ["file_path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "compress_sessions",
+            "description": (
+                "Compress unsummarized chat sessions into context summaries. "
+                "This makes past conversations searchable without replaying every message."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {},
             },
         },
     },
