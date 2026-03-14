@@ -59,6 +59,7 @@ CREATE TABLE user_personalities (
     memory_scope JSONB,
     personality_config JSONB,
     is_public BOOLEAN DEFAULT FALSE,
+    domain_access TEXT[],
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(user_id, slug)
 );
@@ -109,6 +110,27 @@ CREATE TABLE message_metadata (
 );
 """)
 
+# Knowledge Domains (lookup table for fact categorization)
+cur.execute("""
+CREATE TABLE knowledge_domains (
+    id SERIAL PRIMARY KEY,
+    name TEXT UNIQUE NOT NULL,
+    description TEXT
+);
+""")
+
+# Seed default domains
+for name, desc in [
+    ("family", "Children, wife, parents, relatives, family events"),
+    ("physical", "Health, fitness, workouts, body, medical"),
+    ("hobbies", "Football, cooking, photography, gaming, music"),
+    ("work", "Job, career, skills, colleagues, projects"),
+    ("emotional", "Feelings, moods, mental health, struggles"),
+    ("memories", "Life events, travel, nostalgia, milestones"),
+    ("other", "Uncategorized / general knowledge"),
+]:
+    cur.execute("INSERT INTO knowledge_domains (name, description) VALUES (%s, %s);", (name, desc))
+
 # Facts
 cur.execute("""
 CREATE TABLE facts (
@@ -123,6 +145,8 @@ CREATE TABLE facts (
     tier TEXT DEFAULT 'identity',
     entity_type TEXT,
     valence TEXT,
+    domain TEXT,
+    persona_id INT REFERENCES user_personalities(id) ON DELETE SET NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 """)

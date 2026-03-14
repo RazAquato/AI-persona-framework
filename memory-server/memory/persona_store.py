@@ -55,7 +55,8 @@ def get_persona(persona_id: int) -> dict | None:
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT id, user_id, slug, name, description, system_prompt,
-                       nsfw_capable, nsfw_prompt_addon, memory_scope, is_public
+                       nsfw_capable, nsfw_prompt_addon, memory_scope, is_public,
+                       domain_access
                 FROM user_personalities WHERE id = %s;
             """, (persona_id,))
             row = cur.fetchone()
@@ -73,7 +74,8 @@ def get_persona_by_slug(user_id: int, slug: str) -> dict | None:
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT id, user_id, slug, name, description, system_prompt,
-                       nsfw_capable, nsfw_prompt_addon, memory_scope, is_public
+                       nsfw_capable, nsfw_prompt_addon, memory_scope, is_public,
+                       domain_access
                 FROM user_personalities
                 WHERE user_id = %s AND slug = %s;
             """, (user_id, slug))
@@ -92,7 +94,8 @@ def list_personas(user_id: int) -> list[dict]:
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT id, user_id, slug, name, description, system_prompt,
-                       nsfw_capable, nsfw_prompt_addon, memory_scope, is_public
+                       nsfw_capable, nsfw_prompt_addon, memory_scope, is_public,
+                       domain_access
                 FROM user_personalities
                 WHERE user_id = %s
                 ORDER BY created_at ASC;
@@ -104,7 +107,8 @@ def list_personas(user_id: int) -> list[dict]:
 
 def create_persona(user_id: int, slug: str, name: str, description: str = "",
                    system_prompt: str = "", nsfw_capable: bool = False,
-                   nsfw_prompt_addon: str = None, memory_scope: dict = None) -> int:
+                   nsfw_prompt_addon: str = None, memory_scope: dict = None,
+                   domain_access: list = None) -> int:
     """Create a new persona for a user. Returns the persona ID."""
     if memory_scope is None:
         memory_scope = {"tier1": True, "tier2": "all", "tier3": "private"}
@@ -114,11 +118,12 @@ def create_persona(user_id: int, slug: str, name: str, description: str = "",
             cur.execute("""
                 INSERT INTO user_personalities
                     (user_id, slug, name, description, system_prompt,
-                     nsfw_capable, nsfw_prompt_addon, memory_scope)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                     nsfw_capable, nsfw_prompt_addon, memory_scope, domain_access)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id;
             """, (user_id, slug, name, description, system_prompt,
-                  nsfw_capable, nsfw_prompt_addon, Json(memory_scope)))
+                  nsfw_capable, nsfw_prompt_addon, Json(memory_scope),
+                  domain_access))
             persona_id = cur.fetchone()[0]
         conn.commit()
         return persona_id
@@ -129,7 +134,7 @@ def create_persona(user_id: int, slug: str, name: str, description: str = "",
 def update_persona(persona_id: int, **fields) -> bool:
     """Update persona fields. Only provided fields are changed. Returns True if found."""
     allowed = {"slug", "name", "description", "system_prompt",
-               "nsfw_capable", "nsfw_prompt_addon", "memory_scope"}
+               "nsfw_capable", "nsfw_prompt_addon", "memory_scope", "domain_access"}
     updates = {k: v for k, v in fields.items() if k in allowed}
     if not updates:
         return False
@@ -192,6 +197,7 @@ def seed_default_personas(user_id: int) -> list[int]:
             nsfw_capable=p.get("nsfw_capable", False),
             nsfw_prompt_addon=p.get("nsfw_prompt_addon"),
             memory_scope=p.get("memory_scope"),
+            domain_access=p.get("domain_access"),
         )
         created.append(pid)
     return created
@@ -212,4 +218,5 @@ def _row_to_dict(row) -> dict:
         "nsfw_system_prompt_addon": row[7],
         "memory_scope": row[8] or {"tier1": True, "tier2": "all", "tier3": "private"},
         "is_public": row[9] or False,
+        "domain_access": row[10] if len(row) > 10 and row[10] else [],
     }

@@ -375,6 +375,38 @@ async def personas_delete(persona_id: int, user_id: int = Depends(get_current_us
     return {"ok": True}
 
 
+VALID_DOMAINS = {"family", "physical", "hobbies", "work", "emotional", "memories", "other"}
+
+
+class DomainAccessRequest(BaseModel):
+    domain_access: list
+
+
+@app.get("/personas/{persona_id}/domains")
+async def personas_get_domains(persona_id: int, user_id: int = Depends(get_current_user)):
+    """Get a persona's domain access list."""
+    persona = get_persona(persona_id)
+    if not persona or persona["user_id"] != user_id:
+        raise HTTPException(status_code=403, detail="Persona does not belong to you")
+    return {"persona_id": persona_id, "domain_access": persona.get("domain_access", [])}
+
+
+@app.put("/personas/{persona_id}/domains")
+async def personas_update_domains(persona_id: int, req: DomainAccessRequest,
+                                  user_id: int = Depends(get_current_user)):
+    """Update a persona's domain access list."""
+    persona = get_persona(persona_id)
+    if not persona or persona["user_id"] != user_id:
+        raise HTTPException(status_code=403, detail="Persona does not belong to you")
+    # Validate domains
+    invalid = set(req.domain_access) - VALID_DOMAINS
+    if invalid:
+        raise HTTPException(status_code=400,
+                            detail=f"Invalid domains: {', '.join(sorted(invalid))}")
+    db_update_persona(persona_id, domain_access=req.domain_access)
+    return {"ok": True, "domain_access": req.domain_access}
+
+
 @app.get("/sessions")
 async def sessions(user_id: int = Depends(get_current_user)):
     """List sessions for the authenticated user, grouped by persona."""
@@ -560,6 +592,13 @@ CHAT_HTML = """<!DOCTYPE html>
   .toggle-row label { cursor: pointer; user-select: none; }
   .toggle-row input[type="checkbox"] { accent-color: #6a6aaa; cursor: pointer; }
   .toggle-row.hidden { display: none; }
+  #domain-config { margin-top: 10px; font-size: 13px; color: #aab; }
+  #domain-config summary { cursor: pointer; user-select: none; padding: 4px 0; }
+  #domain-checkboxes { padding: 6px 0 4px 4px; }
+  #domain-checkboxes label { display: block; padding: 2px 0; cursor: pointer; user-select: none; }
+  #domain-checkboxes input { accent-color: #6a6aaa; cursor: pointer; margin-right: 6px; }
+  #save-domains-btn { width: 100%; margin-top: 4px; padding: 6px; background: #3a3a6a; border: none; border-radius: 4px; color: #ccc; font-size: 12px; cursor: pointer; }
+  #save-domains-btn:hover { background: #4a4a8a; }
 
   #session-list { flex: 1; overflow-y: auto; padding: 8px; }
   .persona-group { margin-bottom: 12px; }
@@ -641,6 +680,11 @@ CHAT_HTML = """<!DOCTYPE html>
       <input type="checkbox" id="incognito-toggle">
       <label for="incognito-toggle">Incognito</label>
     </div>
+    <details id="domain-config">
+      <summary>Knowledge Domains</summary>
+      <div id="domain-checkboxes"></div>
+      <button id="save-domains-btn" onclick="saveDomains()">Save</button>
+    </details>
     <button id="new-chat-btn" onclick="newChat()">+ New Chat</button>
   </div>
   <div id="session-list"></div>
@@ -931,6 +975,9 @@ function renderSessionList() {
   }
 }
 
+const ALL_DOMAINS = ['family', 'physical', 'hobbies', 'work', 'emotional', 'memories', 'other'];
+const DOMAIN_LABELS = {family:'Family', physical:'Physical', hobbies:'Hobbies', work:'Work', emotional:'Emotional', memories:'Memories', other:'Other'};
+
 function onPersonaChange() {
   currentPersonaId = parseInt(personaSelect.value) || null;
   const p = currentPersona();
@@ -940,7 +987,43 @@ function onPersonaChange() {
     nsfwToggleRow.classList.add('hidden');
     nsfwToggle.checked = false;
   }
+  renderDomainCheckboxes();
   renderSessionList();
+}
+
+function renderDomainCheckboxes() {
+  const container = document.getElementById('domain-checkboxes');
+  container.innerHTML = '';
+  const p = currentPersona();
+  const access = (p && p.domain_access) ? p.domain_access : [];
+  for (const d of ALL_DOMAINS) {
+    const label = document.createElement('label');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = d;
+    cb.checked = access.includes(d);
+    label.appendChild(cb);
+    label.appendChild(document.createTextNode(' ' + (DOMAIN_LABELS[d] || d)));
+    container.appendChild(label);
+  }
+}
+
+async function saveDomains() {
+  if (!currentPersonaId) return;
+  const checks = document.querySelectorAll('#domain-checkboxes input[type=checkbox]');
+  const selected = [];
+  checks.forEach(cb => { if (cb.checked) selected.push(cb.value); });
+  const resp = await authFetch('/personas/' + currentPersonaId + '/domains', {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({domain_access: selected}),
+  });
+  if (resp.ok) {
+    const p = currentPersona();
+    if (p) p.domain_access = selected;
+    document.getElementById('save-domains-btn').textContent = 'Saved!';
+    setTimeout(() => { document.getElementById('save-domains-btn').textContent = 'Save'; }, 1500);
+  }
 }
 
 function buildHeader(persona) {

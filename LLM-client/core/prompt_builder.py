@@ -76,12 +76,13 @@ def build_system_prompt(
                 fact_lines.append(f"- {fact[1]}")
         if fact_lines:
             parts.append(
-                "\n## What You Know About This User\n"
+                "\n## Background Knowledge About This User\n"
                 + "\n".join(fact_lines)
             )
             parts.append(
-                "Use these facts naturally in conversation when relevant. "
-                "Don't list them back — weave them into your responses."
+                "Only reference this background knowledge when directly relevant "
+                "to the current conversation. Do not volunteer these facts unprompted. "
+                "Never list or recite them — if relevant, weave naturally into your response."
             )
 
     # 4. Relevant memories from past conversations

@@ -267,5 +267,37 @@ class TestLLMKnowledgeExtractor(unittest.TestCase):
         self.assertEqual(result["facts"][0]["source_ref"], "doc_42")
 
 
+    # --- Domain classification ---
+
+    @patch("analysis.llm_knowledge_extractor.call_llm")
+    def test_domain_included_in_extracted_facts(self, mock_llm):
+        """LLM-extracted facts should include domain field."""
+        mock_llm.return_value = _make_llm_response(
+            facts=[{"text": "User has a son named Trym", "tier": "identity",
+                     "domain": "family"}],
+        )
+        result = self.extractor.extract_all("My son Trym is 3 years old")
+        self.assertEqual(result["facts"][0]["domain"], "family")
+
+    @patch("analysis.llm_knowledge_extractor.call_llm")
+    def test_domain_null_when_not_provided(self, mock_llm):
+        """Facts without domain from LLM should have domain=None."""
+        mock_llm.return_value = _make_llm_response(
+            facts=[{"text": "User likes hiking", "tier": "identity"}],
+        )
+        result = self.extractor.extract_all("I enjoy hiking in the mountains")
+        self.assertIsNone(result["facts"][0].get("domain"))
+
+    @patch("analysis.llm_knowledge_extractor.call_llm")
+    def test_invalid_domain_normalized_to_none(self, mock_llm):
+        """Invalid domain values should be normalized to None."""
+        mock_llm.return_value = _make_llm_response(
+            facts=[{"text": "User has a cat", "tier": "identity",
+                     "domain": "invalid_domain"}],
+        )
+        result = self.extractor.extract_all("I have a cat named Whiskers at home")
+        self.assertIsNone(result["facts"][0]["domain"])
+
+
 if __name__ == "__main__":
     unittest.main()

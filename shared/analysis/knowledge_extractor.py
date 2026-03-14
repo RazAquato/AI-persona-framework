@@ -154,6 +154,70 @@ CLASSIFICATION_PATTERNS = {
 }
 
 
+# --- Domain classification by keyword heuristic ---
+# Maps TOPIC_KEYWORDS categories to knowledge domains.
+
+TOPIC_TO_DOMAIN = {
+    "family": "family",
+    "fitness": "physical",
+    "cooking": "hobbies",
+    "gaming": "hobbies",
+    "music": "hobbies",
+    "art": "hobbies",
+    "woodworking": "hobbies",
+    "nature": "hobbies",
+    "pets": "hobbies",
+    "work": "work",
+    "technology": "work",
+    "education": "work",
+    "mental_health": "emotional",
+    "travel": "memories",
+    "movies_tv": "hobbies",
+    "vehicles": "hobbies",
+    "finance": "work",
+    "science": "work",
+    "home_automation": "work",
+}
+
+# Keyword sets for direct domain classification on fact text
+DOMAIN_KEYWORDS = {
+    "family": ["wife", "husband", "partner", "spouse", "son", "daughter", "child",
+               "kids", "children", "mother", "father", "mom", "dad", "parent",
+               "brother", "sister", "sibling", "family", "grandparent", "grandmother",
+               "grandfather", "uncle", "aunt", "cousin", "nephew", "niece"],
+    "physical": ["workout", "exercise", "gym", "running", "lifting", "weight",
+                 "muscle", "cardio", "protein", "diet", "health", "training",
+                 "yoga", "swimming", "fitness", "medical", "doctor", "hospital",
+                 "injury", "pain", "sick", "illness"],
+    "hobbies": ["cook", "recipe", "food", "baking", "game", "gaming", "guitar",
+                "piano", "music", "song", "band", "concert", "painting", "drawing",
+                "art", "photography", "camera", "football", "soccer", "basketball",
+                "tennis", "hiking", "camping", "fishing"],
+    "work": ["job", "career", "office", "project", "deadline", "client",
+             "colleague", "boss", "salary", "promotion", "business", "company",
+             "programming", "code", "software", "meeting"],
+    "emotional": ["depressed", "anxious", "stress", "therapy", "counseling",
+                  "overwhelmed", "burnout", "struggle", "frustrated", "lonely",
+                  "angry", "sad", "worried", "scared"],
+    "memories": ["remember", "years ago", "back in", "used to", "when i was",
+                 "vacation", "trip", "travel", "visited", "moved", "graduated",
+                 "wedding", "birthday", "anniversary", "milestone"],
+}
+
+
+def classify_domain(text: str) -> str | None:
+    """Classify a fact's knowledge domain from its text content. Returns domain name or None."""
+    text_lower = text.lower()
+    scores = {}
+    for domain, keywords in DOMAIN_KEYWORDS.items():
+        matches = sum(1 for kw in keywords if kw in text_lower)
+        if matches > 0:
+            scores[domain] = matches
+    if scores:
+        return max(scores, key=scores.get)
+    return None
+
+
 class KnowledgeExtractor:
     """
     Extracts structured knowledge from conversation text.
@@ -223,6 +287,7 @@ class KnowledgeExtractor:
                         "confidence": 0.8,
                         "tags": ["auto_extracted", "identity"],
                         "source_pattern": pattern,
+                        "domain": classify_domain(fact_text),
                     })
 
         return results
@@ -245,6 +310,7 @@ class KnowledgeExtractor:
                         "entity_type": entity_type,
                         "confidence": 0.7,
                         "tags": ["auto_extracted", "entity", entity_type],
+                        "domain": classify_domain(entity_text),
                     })
 
         return results
@@ -266,6 +332,7 @@ class KnowledgeExtractor:
                         "entity_type": None,
                         "confidence": 0.7,
                         "tags": ["auto_extracted", "preference"],
+                        "domain": classify_domain(fact_text),
                     })
 
         return results

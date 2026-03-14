@@ -21,6 +21,7 @@ FAKE_PERSONA = {
     "nsfw_system_prompt_addon": None,
     "memory_scope": {"tier1": True, "tier2": "all"},
     "is_public": False,
+    "domain_access": ["physical", "hobbies", "work", "other"],
 }
 
 FAKE_EMOTION_STATE = {

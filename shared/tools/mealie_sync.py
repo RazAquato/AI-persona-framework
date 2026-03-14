@@ -198,6 +198,7 @@ def sync_mealie(user_id: int, base_url: str = None, token: str = None,
             source_type="mealie",
             source_ref=recipe_id,
             confidence=confidence,
+            domain="hobbies",
         ))
 
     # Category facts
@@ -208,6 +209,7 @@ def sync_mealie(user_id: int, base_url: str = None, token: str = None,
             tags=["mealie", "food_category"],
             source_type="mealie",
             confidence=0.7,
+            domain="hobbies",
         ))
 
     # Frequent ingredients (used in 2+ recipes)
@@ -219,6 +221,7 @@ def sync_mealie(user_id: int, base_url: str = None, token: str = None,
                 tags=["mealie", "ingredient"],
                 source_type="mealie",
                 confidence=0.6,
+                domain="hobbies",
             ))
 
     # 4. Store: delete old snapshot, write new one

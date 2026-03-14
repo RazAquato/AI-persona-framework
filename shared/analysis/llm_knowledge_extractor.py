@@ -79,6 +79,11 @@ EXTRACTION_SCHEMA = {
                                 "type": ["string", "null"],
                                 "enum": ["positive", "neutral", "negative", None],
                             },
+                            "domain": {
+                                "type": ["string", "null"],
+                                "enum": ["family", "physical", "hobbies", "work",
+                                         "emotional", "memories", "other", None],
+                            },
                         },
                         "required": ["text", "tier"],
                         "additionalProperties": False,
@@ -107,9 +112,17 @@ RULES:
    - Positive or neutral mention → tier "identity", valence "positive" or "neutral"
    - Negative mention (frustration, anger, conflict) → tier "emotional", valence "negative"
 5. entity_type: "person", "pet", "place", "event", "thing", or null
-6. topics: broad topic categories (e.g. "technology", "family", "fitness", "gaming", "cooking", "music")
-7. Keep fact text concise (one sentence max).
-8. If the message contains no extractable facts, return empty facts list.
+6. domain: categorize each fact into one knowledge domain:
+   - "family": children, wife, parents, relatives, family events
+   - "physical": health, fitness, workouts, body, medical
+   - "hobbies": sports, cooking, photography, gaming, music, art
+   - "work": job, career, skills, colleagues, projects
+   - "emotional": feelings, moods, mental health, struggles
+   - "memories": life events, travel, nostalgia, milestones
+   - "other": anything that doesn't fit above
+7. topics: broad topic categories (e.g. "technology", "family", "fitness", "gaming", "cooking", "music")
+8. Keep fact text concise (one sentence max).
+9. If the message contains no extractable facts, return empty facts list.
 
 {extra_rules}
 Respond with JSON only."""
@@ -119,7 +132,7 @@ def _build_extraction_prompt(nsfw_mode=False, persona_slug=None):
     """Build the extraction prompt with optional persona-specific rules."""
     extra = ""
     if persona_slug == "psychiatrist" or nsfw_mode:
-        extra = "9. Be EXTRA conservative: do NOT extract emotional confessions, therapy disclosures, or intimate details. When in doubt, skip the fact.\n"
+        extra = "10. Be EXTRA conservative: do NOT extract emotional confessions, therapy disclosures, or intimate details. When in doubt, skip the fact.\n"
     return EXTRACTION_PROMPT.format(extra_rules=extra)
 
 
@@ -189,6 +202,10 @@ class LLMKnowledgeExtractor:
 
             entity_type = item.get("entity_type")
             valence = item.get("valence")
+            domain = item.get("domain")
+            if domain and domain not in ("family", "physical", "hobbies", "work",
+                                         "emotional", "memories", "other"):
+                domain = None
 
             blob = {
                 "text": fact_text,
@@ -199,6 +216,7 @@ class LLMKnowledgeExtractor:
                 "source_type": source_type,
                 "source_ref": source_ref,
                 "valence": valence,
+                "domain": domain,
             }
 
             if entity_type:

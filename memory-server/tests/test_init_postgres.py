@@ -30,6 +30,7 @@ class TestPostgresInit(unittest.TestCase):
             'message_metadata',
             'emotional_relationships',
             'emotion_history',
+            'knowledge_domains',
         }
 
         self.cur.execute("""
@@ -52,6 +53,7 @@ class TestPostgresInit(unittest.TestCase):
             'message_metadata',
             'emotional_relationships',
             'emotion_history',
+            'knowledge_domains',
         }
 
         self.cur.execute("""

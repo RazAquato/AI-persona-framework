@@ -217,6 +217,7 @@ def sync_immich(user_id: int, base_url: str = None, api_key: str = None,
             source_ref=f"person:{name}",
             confidence=confidence,
             entity_type="person",
+            domain="family",
         ))
 
     # City facts — only cities appearing in 2+ sampled photos
@@ -237,6 +238,7 @@ def sync_immich(user_id: int, base_url: str = None, api_key: str = None,
             source_type="immich",
             source_ref=f"city:{city}",
             confidence=confidence,
+            domain="memories",
         ))
 
     # Country facts — countries other than primary (Norway assumed)
@@ -249,6 +251,7 @@ def sync_immich(user_id: int, base_url: str = None, api_key: str = None,
                 source_type="immich",
                 source_ref=f"country:{country}",
                 confidence=0.7,
+                domain="memories",
             ))
 
     # Device facts — cameras appearing in 3+ sampled photos
@@ -261,6 +264,7 @@ def sync_immich(user_id: int, base_url: str = None, api_key: str = None,
                 source_type="immich",
                 source_ref=f"device:{device}",
                 confidence=0.7,
+                domain="other",
             ))
 
     # 4. Store: delete old snapshot, write new one

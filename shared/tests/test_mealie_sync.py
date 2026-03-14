@@ -158,6 +158,14 @@ class TestSyncMealie(unittest.TestCase):
     @patch("tools.mealie_sync.delete_facts_by_source", return_value=0)
     @patch("tools.mealie_sync.store_fact_blobs")
     @patch.object(MealieClient, '_get', side_effect=_mock_get)
+    def test_all_facts_have_hobbies_domain(self, mock_get, mock_store, mock_delete):
+        result = sync_mealie(user_id=9999, base_url="http://fake", token="token")
+        for fact in result["facts"]:
+            self.assertEqual(fact["domain"], "hobbies")
+
+    @patch("tools.mealie_sync.delete_facts_by_source", return_value=0)
+    @patch("tools.mealie_sync.store_fact_blobs")
+    @patch.object(MealieClient, '_get', side_effect=_mock_get)
     def test_all_facts_have_mealie_source_type(self, mock_get, mock_store, mock_delete):
         result = sync_mealie(user_id=9999, base_url="http://fake", token="token")
         for fact in result["facts"]:

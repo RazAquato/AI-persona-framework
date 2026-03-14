@@ -359,5 +359,43 @@ class TestKnowledgeExtractor(unittest.TestCase):
             self.assertIsNone(fact["source_ref"])
 
 
+class TestDomainClassification(unittest.TestCase):
+    """Tests for Phase 1 domain classification on extracted facts."""
+
+    def setUp(self):
+        self.extractor = KnowledgeExtractor()
+
+    def test_family_fact_gets_family_domain(self):
+        """Facts about family members should get domain='family'."""
+        result = self.extractor.extract_all("My wife's name is Maria", role="user")
+        family_facts = [f for f in result["facts"] if f.get("domain") == "family"]
+        self.assertTrue(len(family_facts) > 0)
+
+    def test_work_fact_gets_work_domain(self):
+        """Facts about work should get domain='work'."""
+        result = self.extractor.extract_all("I work as a software engineer", role="user")
+        facts = [f for f in result["facts"] if f.get("domain") == "work"]
+        self.assertTrue(len(facts) > 0)
+
+    def test_hobby_preference_gets_hobbies_domain(self):
+        """Hobby preferences should get domain='hobbies'."""
+        result = self.extractor.extract_all("I love cooking pasta", role="user")
+        hobby_facts = [f for f in result["facts"] if f.get("domain") == "hobbies"]
+        self.assertTrue(len(hobby_facts) > 0)
+
+    def test_facts_have_domain_key(self):
+        """All extracted facts should include a domain key."""
+        result = self.extractor.extract_all("My name is Kenneth", role="user")
+        for fact in result["facts"]:
+            self.assertIn("domain", fact)
+
+    def test_classify_domain_function(self):
+        """classify_domain should classify family text correctly."""
+        from analysis.knowledge_extractor import classify_domain
+        self.assertEqual(classify_domain("User's wife is named Maria"), "family")
+        self.assertEqual(classify_domain("User works at a software company"), "work")
+        self.assertIsNone(classify_domain("Something random and unclassifiable"))
+
+
 if __name__ == "__main__":
     unittest.main()

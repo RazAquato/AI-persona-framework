@@ -31,13 +31,21 @@ class TestBuildSystemPrompt(unittest.TestCase):
         prompt = build_system_prompt(persona, facts=facts)
         self.assertIn("User likes hiking", prompt)
         self.assertIn("User has a dog named Rex", prompt)
-        self.assertIn("What You Know", prompt)
+        self.assertIn("Background Knowledge", prompt)
 
     def test_empty_facts_not_included(self):
         """Empty facts list should not add a facts section."""
         persona = {"system_prompt": "You are Eva."}
         prompt = build_system_prompt(persona, facts=[])
-        self.assertNotIn("What You Know", prompt)
+        self.assertNotIn("Background Knowledge", prompt)
+
+    def test_facts_reframing_no_volunteer(self):
+        """Prompt should tell persona not to volunteer facts unprompted."""
+        persona = {"system_prompt": "You are Eva."}
+        facts = [(1, "User likes hiking", ["hobby"], 0.9)]
+        prompt = build_system_prompt(persona, facts=facts)
+        self.assertIn("Do not volunteer", prompt)
+        self.assertNotIn("Use these facts naturally", prompt)
 
     def test_similar_memories_included(self):
         """Vector search results should appear in prompt."""

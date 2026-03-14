@@ -18,11 +18,11 @@ import unittest
 import os
 import psycopg2
 from dotenv import load_dotenv
-from memory.fact_store import store_fact
+from memory.fact_store import store_fact, delete_fact, get_facts
 from memory.vector_store import store_embedding
 from memory.topic_graph import create_topic_relation
-#, close_driver
 from memory.context_builder import build_context
+from memory.persona_store import create_persona, delete_persona
 
 class TestContextBuilder(unittest.TestCase):
 
@@ -137,6 +137,74 @@ class TestContextBuilder(unittest.TestCase):
         context = build_context(self.user_id, "anything")
         topic_names = [t["topic"] for t in context["user_topics"]]
         self.assertIn("hiking", topic_names)
+
+    # --- Phase 1: Domain + persona filtering ---
+
+    def test_domain_filtering_includes_matching_domain(self):
+        """Facts with a domain in the persona's access list should be visible."""
+        fid = store_fact(self.user_id, "Domain filter hobbies test ZZZ", domain="hobbies")
+        try:
+            context = build_context(self.user_id, "test",
+                                    domain_access=["hobbies", "work"])
+            fact_texts = [f[1] for f in context["facts"]]
+            self.assertTrue(any("Domain filter hobbies test ZZZ" in t for t in fact_texts))
+        finally:
+            if fid:
+                delete_fact(fid)
+
+    def test_domain_filtering_excludes_non_matching_domain(self):
+        """Facts with a domain NOT in the persona's access list should be hidden."""
+        fid = store_fact(self.user_id, "Domain filter family hidden ZZZ", domain="family")
+        try:
+            context = build_context(self.user_id, "test",
+                                    domain_access=["work", "hobbies"])
+            fact_texts = [f[1] for f in context["facts"]]
+            self.assertFalse(any("Domain filter family hidden ZZZ" in t for t in fact_texts))
+        finally:
+            if fid:
+                delete_fact(fid)
+
+    def test_null_domain_always_visible(self):
+        """Facts with NULL domain should be visible to any persona."""
+        fid = store_fact(self.user_id, "Null domain visible test ZZZ", domain=None)
+        try:
+            context = build_context(self.user_id, "test",
+                                    domain_access=["work"])
+            fact_texts = [f[1] for f in context["facts"]]
+            self.assertTrue(any("Null domain visible test ZZZ" in t for t in fact_texts))
+        finally:
+            if fid:
+                delete_fact(fid)
+
+    def test_persona_private_facts_visible_to_owner(self):
+        """Facts with persona_id should be visible to that persona."""
+        pid = create_persona(self.user_id, "ctx_test_p1", "Test P1")
+        try:
+            fid = store_fact(self.user_id, "Private fact for persona ZZZ",
+                             persona_id=pid)
+            context = build_context(self.user_id, "test", persona_id=pid)
+            fact_texts = [f[1] for f in context["facts"]]
+            self.assertTrue(any("Private fact for persona ZZZ" in t for t in fact_texts))
+            if fid:
+                delete_fact(fid)
+        finally:
+            delete_persona(pid)
+
+    def test_persona_private_facts_hidden_from_others(self):
+        """Facts with persona_id should NOT be visible to other personas."""
+        pid1 = create_persona(self.user_id, "ctx_test_p2", "Test P2")
+        pid2 = create_persona(self.user_id, "ctx_test_p3", "Test P3")
+        try:
+            fid = store_fact(self.user_id, "Private only for p2 ZZZ",
+                             persona_id=pid1)
+            context = build_context(self.user_id, "test", persona_id=pid2)
+            fact_texts = [f[1] for f in context["facts"]]
+            self.assertFalse(any("Private only for p2 ZZZ" in t for t in fact_texts))
+            if fid:
+                delete_fact(fid)
+        finally:
+            delete_persona(pid1)
+            delete_persona(pid2)
 
 
 if __name__ == "__main__":

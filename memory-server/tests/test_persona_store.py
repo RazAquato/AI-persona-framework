@@ -136,6 +136,39 @@ class TestPersonaStore(unittest.TestCase):
         with self.assertRaises(Exception):
             create_persona(self.user_id, slug="unique_slug", name="Duplicate")
 
+    # --- Phase 1: Domain access ---
+
+    def test_create_persona_with_domain_access(self):
+        pid = create_persona(self.user_id, slug="domain_test", name="DomainTest",
+                             domain_access=["work", "hobbies"])
+        self.created_ids.append(pid)
+        persona = get_persona(pid)
+        self.assertEqual(set(persona["domain_access"]), {"work", "hobbies"})
+
+    def test_update_persona_domain_access(self):
+        pid = create_persona(self.user_id, slug="domain_upd", name="DomainUpd",
+                             domain_access=["work"])
+        self.created_ids.append(pid)
+        update_persona(pid, domain_access=["family", "physical", "work"])
+        persona = get_persona(pid)
+        self.assertEqual(set(persona["domain_access"]), {"family", "physical", "work"})
+
+    def test_persona_domain_access_defaults_empty(self):
+        pid = create_persona(self.user_id, slug="domain_empty", name="DomainEmpty")
+        self.created_ids.append(pid)
+        persona = get_persona(pid)
+        self.assertEqual(persona["domain_access"], [])
+
+    def test_list_personas_includes_domain_access(self):
+        pid = create_persona(self.user_id, slug="domain_list", name="DomainList",
+                             domain_access=["emotional", "memories"])
+        self.created_ids.append(pid)
+        personas = list_personas(self.user_id)
+        found = [p for p in personas if p["id"] == pid]
+        self.assertEqual(len(found), 1)
+        self.assertIn("domain_access", found[0])
+        self.assertEqual(set(found[0]["domain_access"]), {"emotional", "memories"})
+
 
 if __name__ == "__main__":
     unittest.main()

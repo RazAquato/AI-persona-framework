@@ -201,6 +201,36 @@ class TestSyncImmich(unittest.TestCase):
     @patch("tools.immich_sync.store_fact_blobs")
     @patch.object(ImmichClient, '_post', side_effect=_mock_post)
     @patch.object(ImmichClient, '_get', side_effect=_mock_get)
+    def test_person_facts_have_family_domain(self, mock_get, mock_post, mock_store, mock_delete):
+        result = sync_immich(user_id=9999, base_url="http://fake", api_key="key")
+        person_facts = [f for f in result["facts"] if "person" in f.get("tags", [])]
+        for fact in person_facts:
+            self.assertEqual(fact["domain"], "family")
+
+    @patch("tools.immich_sync.delete_facts_by_source", return_value=0)
+    @patch("tools.immich_sync.store_fact_blobs")
+    @patch.object(ImmichClient, '_post', side_effect=_mock_post)
+    @patch.object(ImmichClient, '_get', side_effect=_mock_get)
+    def test_location_facts_have_memories_domain(self, mock_get, mock_post, mock_store, mock_delete):
+        result = sync_immich(user_id=9999, base_url="http://fake", api_key="key")
+        loc_facts = [f for f in result["facts"] if "location" in f.get("tags", [])]
+        for fact in loc_facts:
+            self.assertEqual(fact["domain"], "memories")
+
+    @patch("tools.immich_sync.delete_facts_by_source", return_value=0)
+    @patch("tools.immich_sync.store_fact_blobs")
+    @patch.object(ImmichClient, '_post', side_effect=_mock_post)
+    @patch.object(ImmichClient, '_get', side_effect=_mock_get)
+    def test_device_facts_have_other_domain(self, mock_get, mock_post, mock_store, mock_delete):
+        result = sync_immich(user_id=9999, base_url="http://fake", api_key="key")
+        dev_facts = [f for f in result["facts"] if "device" in f.get("tags", [])]
+        for fact in dev_facts:
+            self.assertEqual(fact["domain"], "other")
+
+    @patch("tools.immich_sync.delete_facts_by_source", return_value=0)
+    @patch("tools.immich_sync.store_fact_blobs")
+    @patch.object(ImmichClient, '_post', side_effect=_mock_post)
+    @patch.object(ImmichClient, '_get', side_effect=_mock_get)
     def test_all_facts_have_immich_source_type(self, mock_get, mock_post, mock_store, mock_delete):
         result = sync_immich(user_id=9999, base_url="http://fake", api_key="key")
         for fact in result["facts"]:

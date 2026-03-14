@@ -27,6 +27,7 @@ from memory.fact_store import (
     get_facts_by_tag,
     get_facts_by_tier,
     get_facts_by_entity_type,
+    get_accessible_facts,
     delete_fact,
     get_top_facts,
     update_fact
@@ -350,6 +351,99 @@ class TestFactStore(unittest.TestCase):
         results = get_facts_by_tier(self.test_user_id, ["identity", "emotional"])
         tiers = {f[4] for f in results}
         self.assertTrue(tiers.issubset({"identity", "emotional"}))
+
+    # --- Phase 1: Domain + persona_id support ---
+
+    def test_store_fact_with_domain(self):
+        """store_fact should accept and store domain."""
+        fid = store_fact(self.test_user_id, "Domain test hobbies fact ZZZ",
+                         domain="hobbies")
+        self.assertIsNotNone(fid)
+
+    def test_make_fact_blob_with_domain(self):
+        """make_fact_blob should include domain."""
+        blob = make_fact_blob("Test fact", domain="family")
+        self.assertEqual(blob["domain"], "family")
+
+    def test_make_fact_blob_with_persona_id(self):
+        """make_fact_blob should include persona_id."""
+        blob = make_fact_blob("Test fact", persona_id=42)
+        self.assertEqual(blob["persona_id"], 42)
+
+    def test_make_fact_blob_domain_defaults_none(self):
+        """make_fact_blob domain should default to None."""
+        blob = make_fact_blob("Test fact")
+        self.assertIsNone(blob["domain"])
+        self.assertIsNone(blob["persona_id"])
+
+    def test_store_fact_blobs_with_domain(self):
+        """store_fact_blobs should handle blobs with domain."""
+        blobs = [
+            make_fact_blob("Domain blob hobbies 001", domain="hobbies"),
+            make_fact_blob("Domain blob work 002", domain="work"),
+        ]
+        ids = store_fact_blobs(self.test_user_id, blobs)
+        self.assertTrue(all(isinstance(i, int) for i in ids))
+
+    def test_get_accessible_facts_no_filters(self):
+        """get_accessible_facts with no filters returns all facts."""
+        store_fact(self.test_user_id, "Accessible no filter test ZZZ")
+        results = get_accessible_facts(self.test_user_id)
+        self.assertTrue(any("Accessible no filter" in f[1] for f in results))
+
+    def test_get_accessible_facts_domain_filter(self):
+        """get_accessible_facts respects domain_access list."""
+        fid = store_fact(self.test_user_id, "Accessible domain work test ZZZ",
+                         domain="work")
+        try:
+            # Should be visible with work access
+            results = get_accessible_facts(self.test_user_id,
+                                           domain_access=["work", "hobbies"])
+            self.assertTrue(any("Accessible domain work" in f[1] for f in results))
+
+            # Should NOT be visible with only family access
+            results = get_accessible_facts(self.test_user_id,
+                                           domain_access=["family"])
+            self.assertFalse(any("Accessible domain work" in f[1] for f in results))
+        finally:
+            if fid:
+                delete_fact(fid)
+
+    def test_get_accessible_facts_null_domain_always_visible(self):
+        """Facts with NULL domain should be visible regardless of domain_access."""
+        fid = store_fact(self.test_user_id, "Null domain accessible ZZZ",
+                         domain=None)
+        try:
+            results = get_accessible_facts(self.test_user_id,
+                                           domain_access=["work"])
+            self.assertTrue(any("Null domain accessible" in f[1] for f in results))
+        finally:
+            if fid:
+                delete_fact(fid)
+
+    def test_get_accessible_facts_persona_scoping(self):
+        """Facts with persona_id should only be visible to that persona."""
+        from memory.persona_store import create_persona, delete_persona
+        pid = create_persona(self.test_user_id, "fact_test_p1", "Test Persona")
+        try:
+            fid = store_fact(self.test_user_id, "Persona scoped fact ZZZ",
+                             persona_id=pid)
+            # Visible to owning persona
+            results = get_accessible_facts(self.test_user_id, persona_id=pid)
+            self.assertTrue(any("Persona scoped fact" in f[1] for f in results))
+
+            # Not visible to another persona
+            pid2 = create_persona(self.test_user_id, "fact_test_p2", "Test Persona 2")
+            try:
+                results = get_accessible_facts(self.test_user_id, persona_id=pid2)
+                self.assertFalse(any("Persona scoped fact" in f[1] for f in results))
+            finally:
+                delete_persona(pid2)
+
+            if fid:
+                delete_fact(fid)
+        finally:
+            delete_persona(pid)
 
 
 if __name__ == "__main__":

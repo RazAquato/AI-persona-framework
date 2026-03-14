@@ -11,6 +11,7 @@
       "tier2": "all",
       "tier3": "private"
     },
+    "domain_access": ["physical", "hobbies", "work", "other"],
     "user_permission": "adult"
   },
   {
@@ -24,6 +25,7 @@
       "tier2": "all",
       "tier3": "private"
     },
+    "domain_access": ["physical", "hobbies", "other"],
     "user_permission": "adult"
   },
   {
@@ -37,6 +39,7 @@
       "tier2": "all",
       "tier3": "private"
     },
+    "domain_access": ["family", "physical", "hobbies", "work", "emotional", "memories", "other"],
     "user_permission": "adult"
   },
   {
@@ -50,6 +53,7 @@
       "tier2": ["technology"],
       "tier3": "private"
     },
+    "domain_access": ["work", "other"],
     "user_permission": "adult"
   }
 ]

@@ -116,9 +116,11 @@ def run_conversation_turn(
                                         incognito=incognito, nsfw_mode=nsfw_mode)
 
     memory_scope = persona.get("memory_scope", None)
+    domain_access = persona.get("domain_access", None)
 
-    # 3. Build memory context with tier filtering
-    context = build_context(user_id, user_input, memory_scope=memory_scope)
+    # 3. Build memory context with domain + persona filtering
+    context = build_context(user_id, user_input, memory_scope=memory_scope,
+                            persona_id=persona_id, domain_access=domain_access)
     embedded_input = context["embedded_input"]
 
     # 4. Analyze user emotions
@@ -324,11 +326,16 @@ def run_conversation_turn(
             nsfw_mode=nsfw_mode, persona_slug=persona.get("slug"),
         )
 
-        # 15a. Bulk-store extracted facts and entities
+        # 15a. Stamp persona_id on emotional-tier facts (conversation-private)
         all_blobs = extracted["facts"] + extracted["entities"]
+        for blob in all_blobs:
+            if blob.get("tier") == "emotional":
+                blob["persona_id"] = persona_id
+
+        # 15b. Bulk-store extracted facts and entities
         store_fact_blobs(user_id, all_blobs)
 
-        # 15b. Populate Neo4j topic graph + entity nodes
+        # 15c. Populate Neo4j topic graph + entity nodes
         ingest_extracted_knowledge(user_id, extracted)
 
     # 16. Update conversation buffer
