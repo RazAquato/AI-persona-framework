@@ -1,108 +1,133 @@
-# UNDER CONSTRUCTION!
-
 # AI Persona Framework
-Modular LLM assistant with memory, tools and persona simulation
+
+Local-first LLM platform with persistent memory, dynamic emotions, and evolving AI personas.
 
 **Author:** Kenneth Haider
-
-**License**: [GNU General Public License v3.0 (GPLv3)](https://www.gnu.org/licenses/gpl-3.0.en.html)
-
----
-
-## License
-
-This project is licensed under the GNU General Public License v3.0 (GPLv3).
-
-You are free to **use, modify, and distribute** this software — under the condition that **any derivative works or redistributions must also be licensed under GPLv3**.
-
-This ensures the project remains **free and open-source**, even when modified or extended.
-
-See the [LICENSE](./LICENSE) file for full details.
+**License:** [GNU General Public License v3.0 (GPLv3)](https://www.gnu.org/licenses/gpl-3.0.en.html)
 
 ---
 
 ## Vision
 
-> Imagine a world where your AI companion remembers your dog’s name from 2 years ago, your favorite sports team, and the day you felt heartbroken. This framework aims to simulate real-life emotional continuity through layered memory and dynamic agent design.  
-> As AI ramps up in the world, what you give to companies that offer "AI girlfriends" is not just 'a fee for their services' — you give them trust, emotions, and most importantly: a detailed view of yourself.  
-> **This data should be in your hands.**  
-> The vision of this framework is to create a digital assistant that is as capable as you want — but where your data resides locally, on your own server.
+Your AI companion remembers your dog's name from 2 years ago, your favorite sports team, and the day you felt heartbroken. Each persona develops its own personality and emotional relationship with you over time — not by mirroring you, but by being its own character.
 
-## Future vision: AI ecco
-> Imagine having an idea, pitching that idea to "an ecco of yourself", and get feedback based on historic knowledge/past conversations you have had?
-> This idea stems from the "Second brain with zettelkasten" just broader. instad of having hyperlinked notes you can review; imagine having hyperlinked metadata that your AI assistant can distill from, fine-tune, see connections and present to you?
-> Imagine when you one day disappear, that your children could have an ecco to seek guidance from?
-> To support this vision, we need to harvest tons of metadata from each conversation and make that metadata accessible for the AI to train on or search upon
+As AI enters everyday life, the most intimate data you produce — your emotions, struggles, relationships, and inner world — should stay on your own hardware. This framework exists so that depth and privacy aren't mutually exclusive.
 
----
+### Echo: Digital Legacy
 
-## Description
+When you interact with AI personas over months and years, the system builds a rich profile of who you are: your personality, values, humor, knowledge, and feelings about the people in your life. Echo distills this into a persona that your children could talk to someday — carrying forward the positive parts of who you were, filtered for privacy and safety.
 
-The aim is to create an **open-source cognitive architecture** for building persistent, evolving AI agents that learn from long-term interactions.
+### Brain 2.0: External Memory
 
-A secondary goal is to create **"digital echos" of users** it interacts with — so if a user disappears, the AI framework can simulate their personality and style based on previous conversations.
-
-> "When I die, my echo will keep resonating for my children." — unknown
+For those who hyperfocus on topics that go dormant, the system acts as a searchable knowledge graph with a conversational interface. Topics, facts, and connections accumulate across sessions. The persona layer makes daily engagement sustainable — you're not writing a diary, you're having a conversation.
 
 ---
 
-## Core Functionality
+## What It Does Today
 
-- Use **any LLM backend** (local or remote), modular and swappable
-- Dynamic **AI agent personifications** with memory, personality, emotion
-- **Long-term memory** across sessions (vector, structured, and graph-based)
-- **Context-aware prompts**, topic detection, and memory recall
-- **Fact retention and journaling** for persistent knowledge
-- Optional **image generation tools** (e.g., Stable Diffusion)
-- Future support for **sandboxed tools** (web research, files, automation)
+- **4 default personas** with distinct personalities (Maya/girlfriend, Coach/trainer, Dr. Lumen/psychiatrist, DebugBot/debug)
+- **Per-user persona ownership** — create, edit, delete your own personas via API/UI
+- **Persistent memory** across sessions: chat history, semantic search, structured facts, topic graph
+- **Dynamic persona emotions** — each persona maintains emotional state toward you (joy, trust, sadness, etc.) with time-based decay and absence drift
+- **User emotion detection** — 18-dimensional emotion vector per message
+- **LLM-based knowledge extraction** — extracts facts, entities, and topics from conversations with two-tier classification (identity vs emotional)
+- **External data sync** — Mealie (recipes/cooking habits) and Immich (photo archive: people, locations, devices) as identity-tier facts
+- **NSFW mode** — per-session toggle on capable personas, with safety-filtered extraction
+- **Incognito mode** — chat without any DB persistence
+- **Image generation** — ComfyUI integration with per-user/per-persona output folders
+- **Model hot-swap** — switch LLM models from the web UI (kills/restarts llama-server)
+- **Cookie-based auth** — PBKDF2 password hashing, HMAC-signed session cookies, full user isolation
+- **Web UI** — dark-themed chat interface with sidebar, session history, persona selector, model switcher
+- **CLI chat** — terminal interface with `--persona`, `--nsfw`, `--incognito`, `--show-emotions` flags
+- **Echo MVP** — prompt-based personality simulation from conversation history corpus
 
 ---
 
-## Memory Layers
+## Architecture
 
-| Layer               | Backend                | Purpose                                |
-|---------------------|------------------------|----------------------------------------|
-| **Short-term**      | In-memory              | Current session context buffer         |
-| **Semantic recall** | Qdrant                 | Similar past messages via embeddings   |
-| **Structured facts**| PostgreSQL + pgvector  | Core identity, journal logs            |
-| **Graph memory**    | Neo4j                  | Topic trees, emotional scoring, links  |
+Three packages, no shared install — cross-imports via `sys.path`.
 
-You can read more under the doc/ folder on how this is intented to work.
----
-
-## Requirements
-
-### System Requirements
-
-- Python 3.10+
-- PostgreSQL 15+ with `pgvector` extension
-- Neo4j (community or enterprise)
-- Qdrant (Docker or binary)
-- NVIDIA GPU with CUDA (for LLM and image generation)
-- Optional: llama.cpp backend running on port `8080`
-
-### Python Libraries
-
-##
-this is not done yet! we aim for modular requirements for LLM client and memory-server
-Install with:
-
-```bash
-pip install -r requirements.txt
+```
+User input
+  → LLM-client/core/engine.py              # orchestrates one conversation turn
+      → memory-server/memory/context_builder.py   # aggregates facts, vectors, topics
+      → shared/analysis/emotion_handler.py         # user + persona emotion processing
+      → LLM-client/core/prompt_builder.py          # assembles system prompt
+      → LLM-client/core/llm_client.py              # HTTP to llama-server
+      → memory-server/memory/*_store.py            # persist everything
+  → Response with emotions, extracted knowledge, tool results
 ```
 
-`requirements.txt` will probably include:
+### Memory Layers
 
-- `sentence-transformers`
-- `qdrant-client`
-- `psycopg2-binary`
-- `sqlalchemy`
-- `neo4j`
-- `python-dotenv`
-- `textblob`
-- `transformers`
-- `keybert`
-- `scikit-learn`
+| Layer | Backend | Purpose |
+|---|---|---|
+| Short-term buffer | In-memory | Current session context |
+| Chat history | PostgreSQL | Full conversation log |
+| Semantic search | Qdrant (384-dim) | Similar past messages via embeddings |
+| Structured facts | PostgreSQL | Identity + emotional tier facts with tags, valence, confidence |
+| Topic graph | Neo4j | Topic relationships, cross-conversation links |
+| User emotions | PostgreSQL (JSONB) | Per-message 18-dim emotion vectors |
+| Persona emotions | PostgreSQL (JSONB) | Per-user-per-persona emotional state + history |
+
+### Two-Tier Memory Model
+
+- **Identity tier** — who the user IS: stable facts, preferences, personality, life events, positive sentiments. Visible to all personas and Echo.
+- **Emotional tier** — how the user FEELS now: moods, struggles, relationship tensions. Visible to personas only, never Echo. Decays and archives over time.
+
+### External Data Adapters
+
+| Adapter | Source | Facts Produced |
+|---|---|---|
+| Mealie | Recipe/meal plan API | Cooking frequency, categories, ingredients |
+| Immich | Photo archive API | People (face frequency), locations (EXIF GPS), devices |
+
+Adapters use snapshot sync: delete old facts by source_type, insert fresh set. Designed for monthly cron runs.
+
+---
+
+## Running
+
+### Prerequisites
+
+- Python 3.10+ with venv
+- PostgreSQL 15+ (via PgBouncer)
+- Qdrant 1.17+
+- Neo4j 2026.02+
+- NVIDIA GPU with CUDA (for local LLM inference)
+- llama.cpp (compiled with CUDA support)
+
+### Quick Start
+
+```bash
+# Activate venv
+source ~/venvs/AI-persona-framework-venv/bin/activate
+
+# Start the LLM server
+python3 LLM-client/load_LLM.py --model qwen9b
+
+# Start the web UI (in another terminal)
+cd LLM-client/interface/api && uvicorn app:app --host 0.0.0.0 --port 8000
+
+# Or use the CLI
+python3 LLM-client/interface/cli_chat.py --persona girlfriend --show-emotions
+```
+
+### Available Models
+
+| Key | Model | VRAM | Notes |
+|---|---|---|---|
+| `qwen9b` | Qwen 3.5 9B (Uncensored Q8) | ~9.5 GB | Primary chat model |
+| `evathene` | Evathene v1.3 (Q4_K_M) | ~8 GB | Legacy persona model |
+| `deepseek` | DeepSeek v2 (Q4_K_M) | ~8 GB | Coding/debug |
+| `cpp_tutor` | CppTutor (Q4_K) | ~4 GB | C++ tutor |
+| `tinyllama` | TinyLlama 1.1B (Q4_K_M) | ~1 GB | Testing only |
+
+### Tests
+
+```bash
+python3 test_all_python_code.py    # 433 tests across all modules
+```
 
 ---
 
@@ -110,124 +135,89 @@ pip install -r requirements.txt
 
 ```
 AI-persona-framework/
-├── LLM-client/                        # Core persona engine and orchestration logic
-│   ├── agents/                        # Agent configs and personality logic
-│   │   ├── loader.py                  # Main agent loader interface
-│   │   ├── personality_config.json    # Global agent defaults
-│   │   ├── loaders/                   # Personality + agent sub-loaders
-│   │   │   ├── agent_loader.py        # Loads agent metadata
-│   │   │   └── personality_loader.py  # Loads JSON personality definitions
-│   │   └── system_personas/          # Built-in example personas
-│   │       ├── arthur.json
-│   │       ├── maya.json
-│   │       ├── rufus.json
-│   │       └── personality_config.json
-│   ├── config/                        # Environment-specific setup
-│   │   ├── .env                       # Local environment overrides
-│   │   └── env.template               # Sample config template
-│   ├── core/                          # Central processing and orchestration
-│   │   ├── engine.py                  # Main controller (input → memory → output)
-│   │   ├── context_builder.py         # Builds final prompt from memory layers
-│   │   ├── router.py                  # Routes tools, memory, agents dynamically
-│   │   └── echo_controller.py         # (Future) Handles echo persona invocation
-│   ├── interface/                     # User interfaces
-│   │   ├── cli_chat.py                # Terminal interface
-│   │   ├── api/routes.py              # API routes for external access
-│   │   ├── web/                       # Optional: browser front-end
-│   │   └── discord/                   # Optional: Discord chatbot interface
-│   └── tests/                         # Unit tests for LLM-client
-│       ├── test_engine.py
-│       ├── test_loader.py
-│       ├── test_agent_loader.py
-│       ├── test_llm_client.py
-│       └── test_personality_loader.py
-
-├── memory-server/                    # Server-side memory logic
-│   ├── memory/                        # Memory backend logic
-│   │   ├── buffer.py                  # In-memory short-term buffer
-│   │   ├── vector_store.py            # Qdrant-based semantic memory
-│   │   ├── fact_store.py              # PostgreSQL facts + journal memory
-│   │   ├── topic_graph.py             # Neo4j topic/emotion relationship graph
-│   │   ├── metadata.py                # Metadata tagging per message
-│   │   └── summarizer.py              # (Planned) Session summarization & decay
-│   ├── echo/                          # Echo generation (simulated personalities)
-│   │   ├── builder.py                 # Extracts echo corpuses from logs
-│   │   ├── echo_prompt.py             # Prompt constructor for echo-mode
-│   │   ├── traits_extractor.py        # Extracts traits from logs
-│   │   └── data/user_123/             # Sample extracted echo data
-│   │       ├── facts.json
-│   │       ├── logs.json1
-│   │       ├── traits.json
-│   │       └── sessions/
-│   │           └── session_2025_05.json
-│   ├── analytics/                     # Visualization & analysis
-│   │   ├── graph_dashboard.ipynb      # Explore Neo4j topic graphs
-│   │   ├── memory_report.py           # Print/Export user memory
-│   │   └── metadata_timeline.ipynb    # Visualize emotion/topics over time
-│   ├── scripts/                       # Setup and migration
-│   │   ├── init_postgres.py           # Create PostgreSQL schema
-│   │   ├── init_qdrant.py             # Create/reset Qdrant collections
-│   │   ├── init_neo4j.py              # Set up Neo4j schema
-│   │   └── migrate_logs_to_echo.py    # Import legacy logs into echo format
+├── LLM-client/                    # Persona engine and orchestration
+│   ├── core/
+│   │   ├── engine.py              # Main conversation pipeline (17 steps)
+│   │   ├── llm_client.py          # HTTP client for llama-server
+│   │   ├── prompt_builder.py      # System prompt assembly
+│   │   ├── router.py              # Tool command routing (/image, etc.)
+│   │   ├── auth.py                # PBKDF2 passwords + HMAC cookies
+│   │   └── model_manager.py       # Kill/restart llama-server for model switching
+│   ├── interface/
+│   │   ├── api/app.py             # FastAPI web UI + REST API
+│   │   └── cli_chat.py            # Terminal chat interface
 │   ├── config/
-│   │   ├── .env
-│   │   ├── env.template
-│   │   └── settings.yaml
-│   └── tests/                         # Memory unit/integration tests
-│       ├── test_vector_store.py
-│       ├── test_fact_store.py
-│       ├── test_topic_graph.py
-│       ├── test_chat_store.py
-│       ├── test_init_postgres.py
-│       ├── test_init_neo4j.py
-│       └── test_init_qdrant.py
-├── shared/                            # Shared utilities across components
-│   ├── config/
-│   │   ├── .env
-│   │   └── emotions.yaml              # Default emotions schema
-│   ├── tools/                         # Tool logic available to all agents
-│   │   ├── image_gen.py               # Interface for image generation
-│   │   ├── sandbox_env.py             # Sandboxed CLI execution
-│   │   ├── web_research.py            # Web search/summarization tool
-│   │   └── tool_registry.py           # Registers tool capabilities for agents
+│   │   ├── model_configs.yaml     # LLM model definitions (paths, VRAM, ctx)
+│   │   └── personality_config.json # Default persona definitions
+│   ├── load_LLM.py                # Bootstraps llama-server with CUDA
+│   └── tests/                     # 87 tests
+│
+├── memory-server/                 # Memory backends and persistence
+│   ├── memory/
+│   │   ├── chat_store.py          # Session + message CRUD
+│   │   ├── vector_store.py        # Qdrant semantic search
+│   │   ├── fact_store.py          # Structured facts with tiers, tags, valence
+│   │   ├── topic_graph.py         # Neo4j topic relationships
+│   │   ├── emotion_store.py       # User emotion vectors per message
+│   │   ├── persona_emotion_store.py # Persona emotional state per user
+│   │   ├── persona_store.py       # Persona CRUD (DB-backed)
+│   │   ├── context_builder.py     # Aggregates all memory layers for prompt
+│   │   ├── buffer.py              # In-memory conversation buffer
+│   │   └── user_store.py          # User accounts
+│   ├── echo/
+│   │   ├── corpus_builder.py      # Builds Echo training corpus (identity-tier only)
+│   │   ├── echo_prompt.py         # Echo system prompt constructor
+│   │   └── traits_extractor.py    # Stub — personality trait extraction
 │   ├── scripts/
-│   │   ├── agent_creator.py           # Script to add/update agents
-│   │   └── agent_creator_with_emotions.py # Adds emotional defaults
-│   └── tests/
-│       ├── test_agent_creator.py
-│       └── test_agent_creator_with_emotions.py
-
-├── doc/                               # System design and documentation
-│   ├── echo.md
-│   ├── memory.md
-│   ├── flowchart.txt
-│   └── system_architecture.png
-
-├── temp/                              # Temporary or dev scripts
-│   ├── del_qdrant.py
-│   ├── requirements_bloated.txt       # Full CUDA-enabled dependencies
-│   └── requirements2.txt              # Alternative/test config
-
-├── data/                              # (optional) Logs, backups, exports
-│   ├── logs/                          # Raw chat logs (not yet in echo/)
-│   └── backups/                       # Database dumps and snapshots
-
-├── test_all_python_code.py           # Test runner for all unit tests
-├── check_for_unittests.py            # Checks if all modules are covered by tests
-├── README.md
-├── CONTRIBUTING.md
-├── CHANGELOG.md
+│   │   ├── init_postgres.py       # DB schema setup
+│   │   ├── sync_mealie.py         # CLI: monthly Mealie recipe sync
+│   │   └── sync_immich.py         # CLI: monthly Immich photo sync
+│   └── tests/                     # 150 tests
+│
+├── shared/                        # Cross-package utilities
+│   ├── analysis/
+│   │   ├── emotion_handler.py     # User emotion detection + persona emotion engine
+│   │   ├── knowledge_extractor.py # Regex-based fact extraction (fallback)
+│   │   └── llm_knowledge_extractor.py # LLM-based extraction with tier classification
+│   ├── tools/
+│   │   ├── tool_registry.py       # Tool dispatch registry
+│   │   ├── image_gen.py           # Image generation entry point
+│   │   ├── image_orchestrator.py  # ComfyUI bridge
+│   │   ├── mealie_sync.py         # Mealie recipe/meal plan adapter
+│   │   └── immich_sync.py         # Immich photo archive adapter
+│   └── tests/                     # 196 tests
+│
+├── scripts/
+│   └── cron_sync_adapters.sh      # Monthly cron: Mealie + Immich sync
+├── doc/                           # Design documents
+├── test_all_python_code.py        # Runs all tests across all modules
 └── LICENSE
 ```
 
 ---
 
 ## Status
-pre-alpha 0.01
-This project is at it's birth and is under **active construction**.  
-Initial setup scripts are in place.  
-LLM prompting, vector memory, topic tagging, and persona switching are being built.  
-Stable Diffusion + sandbox tools planned next.
 
-Pull requests, ideas, and contributors are welcome — local-first AI should be **ours**, not theirs.
+**Beta** — core conversation pipeline, memory system, web UI, auth, emotions, knowledge extraction, external adapters, and model switching are all functional with 433 passing tests.
 
+**In design:** Topic-emotion architecture with per-persona salience tracking, temporal pattern recognition, reflection agent, and persona autonomy (personas develop their own opinions rather than mirroring the user).
+
+**Roadmap:**
+- Per-persona fact scoping (stop oversharing between personas)
+- Topic salience with decay (surface relevant facts, not everything)
+- Nightly reflection agent (pattern detection in temporal data)
+- Persona topic emotions (autonomous, non-compliant personality development)
+- Additional data adapters (Fitbit, ChatGPT history import, document ingestion)
+- Home automation integration (AI-driven Home Assistant via Neo4j house graph)
+
+---
+
+## License
+
+This project is licensed under the GNU General Public License v3.0 (GPLv3).
+
+You are free to **use, modify, and distribute** this software — under the condition that **any derivative works must also be licensed under GPLv3**.
+
+Privacy is non-negotiable. The data this system produces — emotional, psychiatric, intimate — is the most personal dataset a human can generate. It stays on your hardware.
+
+Pull requests, ideas, and contributors are welcome. Local-first AI should be **ours**, not theirs.
