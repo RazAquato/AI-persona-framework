@@ -117,7 +117,12 @@ CREATE TABLE facts (
     text TEXT,
     source_chat_id INT REFERENCES chat_messages(id),
     relevance_score FLOAT,
-    tags TEXT[]
+    tags TEXT[],
+    source_type TEXT DEFAULT 'conversation',
+    source_ref TEXT,
+    tier TEXT DEFAULT 'knowledge',
+    entity_type TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 """)
 

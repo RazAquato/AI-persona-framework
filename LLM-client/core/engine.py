@@ -58,8 +58,8 @@ from memory.vector_store import store_embedding
 from memory.emotion_store import store_emotion_vector
 from memory.persona_emotion_store import load_persona_emotion, save_persona_emotion
 from memory.persona_store import get_persona
-from memory.fact_store import store_fact
-from memory.topic_graph import create_topic_relation, link_all_topics, create_entity, link_entity_to_topic
+from memory.fact_store import store_fact, store_fact_blobs
+from memory.topic_graph import create_topic_relation, link_all_topics, create_entity, link_entity_to_topic, ingest_extracted_knowledge
 from memory.buffer import conversation_buffer
 from core.llm_client import call_llm
 from core.prompt_builder import build_system_prompt, build_message_list
@@ -302,44 +302,17 @@ def run_conversation_turn(
         save_persona_emotion(user_id, persona_id, new_persona_emotions)
 
         # 15. Knowledge extraction — extract from user input
-        extracted = _knowledge_extractor.extract_all(user_input, role="user")
+        extracted = _knowledge_extractor.extract_all(
+            user_input, role="user",
+            source_type="conversation", source_ref=str(message_id),
+        )
 
-        # 15a. Store extracted facts
-        for fact in extracted["facts"]:
-            store_fact(
-                user_id=user_id,
-                fact=fact["text"],
-                tags=fact.get("tags", []),
-                relevance_score=fact.get("confidence", 0.5),
-                source_type="conversation",
-                source_ref=str(message_id),
-                tier=fact.get("tier", "knowledge"),
-                entity_type=fact.get("entity_type"),
-            )
+        # 15a. Bulk-store extracted facts and entities
+        all_blobs = extracted["facts"] + extracted["entities"]
+        store_fact_blobs(user_id, all_blobs)
 
-        # 15b. Store extracted entities as facts AND in Neo4j
-        for entity in extracted["entities"]:
-            store_fact(
-                user_id=user_id,
-                fact=entity["text"],
-                tags=entity.get("tags", []),
-                relevance_score=entity.get("confidence", 0.5),
-                source_type="conversation",
-                source_ref=str(message_id),
-                tier=entity.get("tier", "knowledge"),
-                entity_type=entity.get("entity_type"),
-            )
-            # Extract entity name from the fact text for Neo4j
-            _store_entity_in_graph(user_id, entity)
-
-        # 15c. Populate topic graph
-        topic_names = [t["topic"] for t in extracted["topics"]]
-        for topic_info in extracted["topics"]:
-            create_topic_relation(user_id, topic_info["topic"])
-
-        # 15d. Cross-link topics that appeared in the same message
-        if len(topic_names) >= 2:
-            link_all_topics(topic_names)
+        # 15b. Populate Neo4j topic graph + entity nodes
+        ingest_extracted_knowledge(user_id, extracted)
 
     # 16. Update conversation buffer
     conversation_buffer.add_message(user_id, session_id, "user", user_input)
@@ -359,27 +332,6 @@ def run_conversation_turn(
         "nsfw_mode": nsfw_mode,
         "llm_raw": response.get("raw"),
     }
-
-
-def _store_entity_in_graph(user_id: int, entity: dict):
-    """Helper to store an extracted entity in Neo4j."""
-    entity_type = entity.get("entity_type")
-    text = entity.get("text", "")
-
-    # Try to extract the entity name from the fact text
-    # Pattern: "User has a pet named X" or "User's wife is named X"
-    import re
-    name_match = re.search(r"named (\w+)", text)
-    if name_match:
-        entity_name = name_match.group(1)
-        create_entity(user_id, entity_name, entity_type or "thing")
-    elif entity_type:
-        # Use first capitalized word as entity name fallback
-        words = text.split()
-        for w in reversed(words):
-            if w[0].isupper() and len(w) > 1:
-                create_entity(user_id, w, entity_type)
-                break
 
 
 def process_input(user_input: str, session_id: str = None, user_id: int = 9999,

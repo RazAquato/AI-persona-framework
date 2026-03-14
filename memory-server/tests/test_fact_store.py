@@ -21,6 +21,8 @@ from dotenv import load_dotenv
 
 from memory.fact_store import (
     store_fact,
+    store_fact_blobs,
+    make_fact_blob,
     get_facts,
     get_facts_by_tag,
     get_facts_by_tier,
@@ -239,6 +241,72 @@ class TestFactStore(unittest.TestCase):
         """get_facts_by_tier with empty tier list should return empty."""
         results = get_facts_by_tier(self.test_user_id, [])
         self.assertEqual(results, [])
+
+    # --- Batch 2: store_fact_blobs and make_fact_blob ---
+
+    def test_make_fact_blob(self):
+        """make_fact_blob should create a dict with all standard keys."""
+        blob = make_fact_blob("Test fact", tier="identity", entity_type="person",
+                              confidence=0.9, tags=["test"], source_type="document",
+                              source_ref="doc_001")
+        self.assertEqual(blob["text"], "Test fact")
+        self.assertEqual(blob["tier"], "identity")
+        self.assertEqual(blob["entity_type"], "person")
+        self.assertEqual(blob["confidence"], 0.9)
+        self.assertEqual(blob["source_type"], "document")
+
+    def test_make_fact_blob_defaults(self):
+        """make_fact_blob defaults should be sensible."""
+        blob = make_fact_blob("Minimal")
+        self.assertEqual(blob["tier"], "knowledge")
+        self.assertIsNone(blob["entity_type"])
+        self.assertEqual(blob["tags"], [])
+        self.assertEqual(blob["source_type"], "conversation")
+
+    def test_store_fact_blobs_basic(self):
+        """store_fact_blobs should insert multiple facts in one call."""
+        blobs = [
+            make_fact_blob("Bulk test fact alpha 001"),
+            make_fact_blob("Bulk test fact beta 002"),
+        ]
+        ids = store_fact_blobs(self.test_user_id, blobs)
+        self.assertEqual(len(ids), 2)
+        self.assertTrue(all(isinstance(i, int) for i in ids))
+
+    def test_store_fact_blobs_dedup_within_batch(self):
+        """Duplicate facts within same batch should be deduped."""
+        blobs = [
+            make_fact_blob("Batch dedup test gamma 003"),
+            make_fact_blob("Batch dedup test gamma 003"),
+        ]
+        ids = store_fact_blobs(self.test_user_id, blobs)
+        self.assertIsNotNone(ids[0])
+        self.assertIsNone(ids[1])
+
+    def test_store_fact_blobs_dedup_against_db(self):
+        """Facts already in DB should be deduped."""
+        text = "DB dedup test delta 004"
+        store_fact(self.test_user_id, text)
+        ids = store_fact_blobs(self.test_user_id, [make_fact_blob(text)])
+        self.assertIsNone(ids[0])
+
+    def test_store_fact_blobs_empty_list(self):
+        """Empty blob list should return empty list."""
+        ids = store_fact_blobs(self.test_user_id, [])
+        self.assertEqual(ids, [])
+
+    def test_store_fact_blobs_source_override(self):
+        """Source type/ref override should apply to blobs without their own."""
+        blobs = [make_fact_blob("Source override test epsilon 005")]
+        ids = store_fact_blobs(self.test_user_id, blobs,
+                               source_type="image_analysis", source_ref="img_99")
+        self.assertIsNotNone(ids[0])
+
+    def test_store_fact_blobs_skips_empty_text(self):
+        """Blobs with empty text should be skipped."""
+        blobs = [{"text": "", "tier": "knowledge"}, {"text": "   ", "tier": "knowledge"}]
+        ids = store_fact_blobs(self.test_user_id, blobs)
+        self.assertEqual(ids, [None, None])
 
 
 if __name__ == "__main__":

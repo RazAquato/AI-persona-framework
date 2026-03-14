@@ -327,6 +327,37 @@ class TestKnowledgeExtractor(unittest.TestCase):
             if nature:
                 self.assertGreaterEqual(nature["confidence"], 0.4)
 
+    # --- Source metadata passthrough ---
+
+    def test_source_metadata_on_facts(self):
+        """Extracted facts should carry source_type and source_ref."""
+        result = self.extractor.extract_all(
+            "My name is Kenneth", role="user",
+            source_type="document", source_ref="doc_42",
+        )
+        self.assertGreater(len(result["facts"]), 0)
+        for fact in result["facts"]:
+            self.assertEqual(fact["source_type"], "document")
+            self.assertEqual(fact["source_ref"], "doc_42")
+
+    def test_source_metadata_on_entities(self):
+        """Extracted entities should carry source_type and source_ref."""
+        result = self.extractor.extract_all(
+            "My dog is named Rex", role="user",
+            source_type="conversation", source_ref="msg_123",
+        )
+        self.assertGreater(len(result["entities"]), 0)
+        for entity in result["entities"]:
+            self.assertEqual(entity["source_type"], "conversation")
+            self.assertEqual(entity["source_ref"], "msg_123")
+
+    def test_source_metadata_defaults(self):
+        """Default source_type should be 'conversation', source_ref None."""
+        result = self.extractor.extract_all("My name is Kenneth", role="user")
+        for fact in result["facts"]:
+            self.assertEqual(fact["source_type"], "conversation")
+            self.assertIsNone(fact["source_ref"])
+
 
 if __name__ == "__main__":
     unittest.main()

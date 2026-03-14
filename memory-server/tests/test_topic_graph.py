@@ -29,6 +29,7 @@ from memory.topic_graph import (
     create_entity,
     link_entity_to_topic,
     get_user_entities,
+    ingest_extracted_knowledge,
 )
 
 class TestTopicGraph(unittest.TestCase):
@@ -234,6 +235,38 @@ class TestTopicGraph(unittest.TestCase):
         topics = get_user_topics("nonexistent_user_xyz", limit=10)
         self.assertEqual(topics, [])
 
+    def test_ingest_extracted_knowledge(self):
+        """ingest_extracted_knowledge should create topics, entities, and links."""
+        extracted = {
+            "facts": [{"text": "User likes hiking", "tier": "knowledge"}],
+            "entities": [{"text": "User has a pet named IngestDog", "entity_type": "pet"}],
+            "topics": [
+                {"topic": "ingest_topic_a", "confidence": 0.8},
+                {"topic": "ingest_topic_b", "confidence": 0.6},
+            ],
+        }
+        ingest_extracted_knowledge(self.test_user_id, extracted)
+
+        # Verify topics were created
+        topics = get_user_topics(self.test_user_id, limit=50)
+        topic_names = [t["topic"] for t in topics]
+        self.assertIn("ingest_topic_a", topic_names)
+        self.assertIn("ingest_topic_b", topic_names)
+
+        # Verify entity was created
+        entities = get_user_entities(self.test_user_id, entity_type="pet")
+        entity_names = [e["name"] for e in entities]
+        self.assertIn("IngestDog", entity_names)
+
+        # Verify topics were cross-linked
+        network = get_topic_network("ingest_topic_a")
+        related = [r["related_topic"] for r in network]
+        self.assertIn("ingest_topic_b", related)
+
+    def test_ingest_empty_extracted(self):
+        """ingest_extracted_knowledge should handle empty input without error."""
+        ingest_extracted_knowledge(self.test_user_id, {"facts": [], "entities": [], "topics": []})
+
     @classmethod
     def tearDownClass(cls):
         with cls.driver.session() as session:
@@ -244,8 +277,8 @@ class TestTopicGraph(unittest.TestCase):
                 "t3": cls.topic3
             })
             # Clean up M2 test data
-            session.run("MATCH (t:Topic) WHERE t.name IN ['minimal_topic', 'pets_topic_test', 'weight_topic_test'] DETACH DELETE t")
-            session.run("MATCH (e:Entity) WHERE e.name IN ['TestDog', 'TestPerson', 'TestPlace', 'EntityTopicDog', 'AttrDog', 'IdempotentDog', 'WeightDog'] DETACH DELETE e")
+            session.run("MATCH (t:Topic) WHERE t.name IN ['minimal_topic', 'pets_topic_test', 'weight_topic_test', 'ingest_topic_a', 'ingest_topic_b'] DETACH DELETE t")
+            session.run("MATCH (e:Entity) WHERE e.name IN ['TestDog', 'TestPerson', 'TestPlace', 'EntityTopicDog', 'AttrDog', 'IdempotentDog', 'WeightDog', 'IngestDog'] DETACH DELETE e")
         cls.driver.close()
 
 

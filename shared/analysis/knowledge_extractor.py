@@ -160,13 +160,17 @@ class KnowledgeExtractor:
     Runs synchronously — no LLM needed.
     """
 
-    def extract_all(self, text: str, role: str = "user") -> dict:
+    def extract_all(self, text: str, role: str = "user",
+                    source_type: str = "conversation",
+                    source_ref: str = None) -> dict:
         """
         Run all extraction passes on a message.
 
         Args:
             text: the message content
             role: 'user' or 'assistant'
+            source_type: origin of the text (conversation, document, image_analysis, etc.)
+            source_ref: reference ID (message_id, filename, etc.)
 
         Returns:
             dict with keys: facts, entities, topics, classification, raw_text
@@ -179,6 +183,11 @@ class KnowledgeExtractor:
             facts.extend(self._extract_identity_facts(text))
             facts.extend(self._extract_preference_facts(text))
             entities.extend(self._extract_entities(text))
+
+        # Stamp source metadata onto all extracted items
+        for item in facts + entities:
+            item["source_type"] = source_type
+            item["source_ref"] = source_ref
 
         topics = self._detect_topics(text)
         classification = self._classify_message(text)

@@ -196,6 +196,49 @@ def link_entity_to_topic(entity_name: str, topic: str):
             """, {"entity_name": entity_name, "topic": topic})
 
 
+def ingest_extracted_knowledge(user_id: int, extracted: dict):
+    """
+    Take the output of KnowledgeExtractor.extract_all() and write all
+    topics, entities, and cross-links to Neo4j in one call.
+
+    Replaces the manual steps 15b-15d in engine.py.
+
+    Args:
+        user_id: the user who produced this knowledge
+        extracted: dict with keys: facts, entities, topics (from extract_all)
+    """
+    # Topics: create user→topic relations
+    topic_names = [t["topic"] for t in extracted.get("topics", [])]
+    for topic_info in extracted.get("topics", []):
+        create_topic_relation(user_id, topic_info["topic"])
+
+    # Cross-link topics that appeared together
+    if len(topic_names) >= 2:
+        link_all_topics(topic_names)
+
+    # Entities: create in graph and link to detected topics
+    for entity in extracted.get("entities", []):
+        entity_type = entity.get("entity_type")
+        text = entity.get("text", "")
+
+        import re
+        name_match = re.search(r"named (\w+)", text)
+        if name_match:
+            entity_name = name_match.group(1)
+            create_entity(user_id, entity_name, entity_type or "thing")
+            # Link entity to any detected topics
+            for topic_name in topic_names:
+                link_entity_to_topic(entity_name, topic_name)
+        elif entity_type:
+            words = text.split()
+            for w in reversed(words):
+                if w[0].isupper() and len(w) > 1:
+                    create_entity(user_id, w, entity_type)
+                    for topic_name in topic_names:
+                        link_entity_to_topic(w, topic_name)
+                    break
+
+
 def get_user_entities(user_id: int, entity_type: str = None):
     """
     Get all entities a user knows about, optionally filtered by type.

@@ -94,6 +94,94 @@ def _fact_exists(user_id: int, fact_text: str) -> bool:
         conn.close()
 
 
+def make_fact_blob(text: str, tier: str = "knowledge", entity_type: str = None,
+                   confidence: float = 0.5, tags: list = None,
+                   source_type: str = "conversation", source_ref: str = None) -> dict:
+    """
+    Factory function for creating fact dicts in the standard schema.
+    Use this instead of constructing dicts manually.
+    """
+    return {
+        "text": text,
+        "tier": tier,
+        "entity_type": entity_type,
+        "confidence": confidence,
+        "tags": tags or [],
+        "source_type": source_type,
+        "source_ref": source_ref,
+    }
+
+
+def store_fact_blobs(user_id: int, blobs: list, source_type: str = None,
+                     source_ref: str = None) -> list:
+    """
+    Bulk-insert a list of fact dicts (from knowledge_extractor or compression pipeline).
+    Deduplicates within the batch and against existing facts.
+    Optional source_type/source_ref override applies to all blobs that don't have their own.
+
+    Args:
+        user_id: the user who owns these facts
+        blobs: list of dicts with keys: text, tier, entity_type, confidence, tags, source_type, source_ref
+        source_type: fallback source_type if blob doesn't specify one
+        source_ref: fallback source_ref if blob doesn't specify one
+
+    Returns:
+        list of inserted fact IDs (None entries for deduped/skipped blobs)
+    """
+    if not blobs:
+        return []
+
+    conn = get_connection()
+    try:
+        ids = []
+        seen_texts = set()
+        with conn.cursor() as cur:
+            for blob in blobs:
+                text = blob.get("text", "").strip()
+                if not text:
+                    ids.append(None)
+                    continue
+
+                # Dedup within batch
+                text_lower = text.lower()
+                if text_lower in seen_texts:
+                    ids.append(None)
+                    continue
+                seen_texts.add(text_lower)
+
+                # Dedup against DB
+                cur.execute(
+                    "SELECT COUNT(*) FROM facts WHERE user_id = %s AND LOWER(text) = LOWER(%s);",
+                    (user_id, text)
+                )
+                if cur.fetchone()[0] > 0:
+                    ids.append(None)
+                    continue
+
+                blob_source_type = blob.get("source_type") or source_type or "conversation"
+                blob_source_ref = blob.get("source_ref") or source_ref
+
+                cur.execute("""
+                    INSERT INTO facts (user_id, text, tags, relevance_score,
+                                       source_type, source_ref, tier, entity_type)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    RETURNING id;
+                """, (
+                    user_id, text,
+                    blob.get("tags"),
+                    blob.get("confidence"),
+                    blob_source_type,
+                    blob_source_ref,
+                    blob.get("tier", "knowledge"),
+                    blob.get("entity_type"),
+                ))
+                ids.append(cur.fetchone()[0])
+        conn.commit()
+        return ids
+    finally:
+        conn.close()
+
+
 def get_facts(user_id: int, tier: str = None):
     """
     Retrieve facts for a given user, optionally filtered by tier.
