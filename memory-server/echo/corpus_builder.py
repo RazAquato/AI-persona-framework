@@ -8,6 +8,9 @@ Echo Corpus Builder
 Collects a user's conversation history, facts, and topic interests
 from the database into a structured corpus dict for trait extraction.
 
+Privacy boundary: Echo only sees identity-tier facts. Emotional-tier
+facts (negative people mentions, struggles) are excluded.
+
 The corpus is the raw material from which Echo personality signals
 are extracted. It stays in-memory — no files written to disk.
 """
@@ -21,7 +24,7 @@ if MEMORY_PATH not in sys.path:
     sys.path.append(MEMORY_PATH)
 
 from memory.chat_store import get_connection
-from memory.fact_store import get_facts
+from memory.fact_store import get_facts_by_tier
 from memory.topic_graph import get_user_topics
 
 
@@ -37,7 +40,8 @@ def build_corpus(user_id: int, max_messages: int = 500) -> dict:
         dict with keys: messages, facts, topics, stats
     """
     messages = _get_user_messages(user_id, limit=max_messages)
-    facts = get_facts(user_id)
+    # Echo only sees identity-tier facts — emotional facts are private to chatbot
+    facts = get_facts_by_tier(user_id, ["identity"])
     topics = get_user_topics(user_id, limit=50)
 
     # Compute basic stats

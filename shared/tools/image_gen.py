@@ -34,8 +34,9 @@ def _get_orchestrator():
 
 
 def generate(prompt: str, user_id: int = 9999, user_permission: str = "adult",
-             width: int = 512, height: int = 512, seed: int = None,
-             negative_prompt: str = None, workflow: str = None) -> dict:
+             persona_id: int = None, width: int = 512, height: int = 512,
+             seed: int = None, negative_prompt: str = None,
+             workflow: str = None) -> dict:
     """
     Generate an image from a text prompt.
 
@@ -43,6 +44,7 @@ def generate(prompt: str, user_id: int = 9999, user_permission: str = "adult",
         prompt: Text description of the desired image
         user_id: Requesting user's ID
         user_permission: "adult", "teen", or "child"
+        persona_id: Persona ID (for output folder structure)
         width: Image width
         height: Image height
         seed: Random seed (None = random)
@@ -57,6 +59,7 @@ def generate(prompt: str, user_id: int = 9999, user_permission: str = "adult",
         prompt=prompt,
         user_id=user_id,
         user_permission=user_permission,
+        persona_id=persona_id,
         workflow_name=workflow,
         width=width,
         height=height,

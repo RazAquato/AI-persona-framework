@@ -60,6 +60,7 @@ from memory.persona_store import (
     delete_persona as db_delete_persona, seed_default_personas,
 )
 import tool_registry
+from core.model_manager import list_available_models, switch_model
 
 # LLM server URL (for model info queries)
 from dotenv import load_dotenv
@@ -288,6 +289,25 @@ async def model_info():
         return {"model": "unknown", "params": 0}
     except Exception:
         return {"model": "offline", "params": 0}
+
+
+@app.get("/models")
+async def models_list(user_id: int = Depends(get_current_user)):
+    """List all available models with their VRAM requirements."""
+    return {"models": list_available_models()}
+
+
+class SwitchModelRequest(BaseModel):
+    model_key: str
+
+
+@app.post("/model/switch")
+async def model_switch(req: SwitchModelRequest, user_id: int = Depends(get_current_user)):
+    """Kill the current llama-server and start a new one with the requested model."""
+    result = switch_model(req.model_key)
+    if not result["success"]:
+        raise HTTPException(status_code=500, detail=result.get("error", "Switch failed"))
+    return result
 
 
 @app.get("/health")
@@ -561,6 +581,30 @@ CHAT_HTML = """<!DOCTYPE html>
   #chat-header .emotion-badge { font-size: 12px; color: #8a8aaa; }
   #chat-header .model-badge { font-size: 11px; color: #556; margin-left: auto; }
 
+  /* Model switcher */
+  #model-switcher { display: flex; align-items: center; gap: 8px; margin-left: 12px; }
+  #model-select { padding: 4px 8px; background: #1a1a2e; color: #eee; border: 1px solid #444; border-radius: 4px; font-size: 12px; cursor: pointer; max-width: 200px; }
+  #model-select:focus { outline: none; border-color: #6a6aaa; }
+  #model-switch-btn { padding: 4px 12px; background: #4a4a8a; border: none; border-radius: 4px; color: #eee; font-size: 12px; cursor: pointer; display: none; }
+  #model-switch-btn:hover { background: #5a5a9a; }
+  #model-switch-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  #model-status { font-size: 11px; color: #8a8aaa; }
+
+  /* Modal overlay */
+  .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 100; align-items: center; justify-content: center; }
+  .modal-overlay.visible { display: flex; }
+  .modal-box { background: #16213e; border: 1px solid #2a2a4a; border-radius: 12px; padding: 28px; max-width: 420px; width: 90%; }
+  .modal-box h3 { font-size: 16px; margin-bottom: 12px; color: #ccd; }
+  .modal-box p { font-size: 14px; color: #aab; margin-bottom: 16px; line-height: 1.5; }
+  .modal-box .modal-info { font-size: 12px; color: #667; margin-bottom: 16px; padding: 8px; background: #1a1a2e; border-radius: 6px; }
+  .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+  .modal-actions button { padding: 8px 20px; border: none; border-radius: 6px; font-size: 14px; cursor: pointer; }
+  .modal-actions .cancel { background: #2a2a4a; color: #aab; }
+  .modal-actions .cancel:hover { background: #3a3a5a; }
+  .modal-actions .confirm { background: #4a4a8a; color: #eee; }
+  .modal-actions .confirm:hover { background: #5a5a9a; }
+  .modal-actions .confirm:disabled { opacity: 0.5; cursor: not-allowed; }
+
   #chat { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 12px; }
   .msg { max-width: 70%; padding: 12px 16px; border-radius: 16px; line-height: 1.5; white-space: pre-wrap; word-wrap: break-word; }
   .msg.user { align-self: flex-end; background: #4a4a8a; }
@@ -608,6 +652,24 @@ CHAT_HTML = """<!DOCTYPE html>
     <span class="persona-name" id="header-persona">Select a persona</span>
     <span class="emotion-badge" id="header-emotion"></span>
     <span class="model-badge" id="header-model"></span>
+    <div id="model-switcher">
+      <select id="model-select" onchange="onModelSelectChange()"></select>
+      <button id="model-switch-btn" onclick="showSwitchModal()">Switch</button>
+      <span id="model-status"></span>
+    </div>
+  </div>
+
+  <!-- Model switch confirmation modal -->
+  <div class="modal-overlay" id="switch-modal">
+    <div class="modal-box">
+      <h3>Switch LLM Model</h3>
+      <p>This will stop the current model and load the new one. The service will be unavailable for up to a minute during the switch.</p>
+      <div class="modal-info" id="switch-modal-info"></div>
+      <div class="modal-actions">
+        <button class="cancel" onclick="hideSwitchModal()">Cancel</button>
+        <button class="confirm" id="switch-confirm-btn" onclick="confirmSwitch()">OK, Switch Model</button>
+      </div>
+    </div>
   </div>
   <div id="chat">
     <div id="empty-state">Start a new chat or select an existing one</div>
@@ -630,6 +692,12 @@ const nsfwToggle = document.getElementById('nsfw-toggle');
 const nsfwToggleRow = document.getElementById('nsfw-toggle-row');
 const incognitoToggle = document.getElementById('incognito-toggle');
 const usernameDisplay = document.getElementById('username-display');
+const modelSelect = document.getElementById('model-select');
+const modelSwitchBtn = document.getElementById('model-switch-btn');
+const modelStatus = document.getElementById('model-status');
+const switchModal = document.getElementById('switch-modal');
+const switchModalInfo = document.getElementById('switch-modal-info');
+const switchConfirmBtn = document.getElementById('switch-confirm-btn');
 
 let sessionId = null;
 let currentPersonaId = null;
@@ -637,6 +705,8 @@ let sessionNsfw = false;
 let sessionIncognito = false;
 let personas = [];       // array of {id, slug, name, nsfw_capable, ...}
 let allSessions = {};    // grouped by persona_slug
+let availableModels = [];  // [{key, name, vram_gb, ctx_size}]
+let currentModelKey = null; // key of currently loaded model (matched from /model)
 
 inputEl.addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMsg(); }
@@ -685,16 +755,110 @@ async function loadUser() {
 }
 
 async function loadModelInfo() {
+  // Load available models list
+  try {
+    const resp = await authFetch('/models');
+    const data = await resp.json();
+    availableModels = data.models || [];
+  } catch(e) {
+    availableModels = [];
+  }
+
+  // Load currently running model
+  let currentModelName = 'offline';
   try {
     const resp = await fetch('/model');
     const data = await resp.json();
     if (data.model && data.model !== 'offline') {
-      headerModel.textContent = data.model;
+      currentModelName = data.model;
+    }
+  } catch(e) {}
+
+  // Match current model to config key by checking if filename is in the model path
+  currentModelKey = null;
+  for (const m of availableModels) {
+    // The /model endpoint returns the gguf filename without extension
+    // Match by checking if the model name contains the key or vice versa
+    if (currentModelName.toLowerCase().includes(m.key.toLowerCase()) ||
+        m.name.toLowerCase().includes(currentModelName.toLowerCase())) {
+      currentModelKey = m.key;
+      break;
+    }
+  }
+
+  headerModel.textContent = currentModelKey
+    ? availableModels.find(m => m.key === currentModelKey)?.name || currentModelName
+    : (currentModelName === 'offline' ? 'LLM offline' : currentModelName);
+
+  // Populate model dropdown
+  modelSelect.innerHTML = '';
+  for (const m of availableModels) {
+    const opt = document.createElement('option');
+    opt.value = m.key;
+    opt.textContent = m.name + ' (' + m.vram_gb + ' GB)';
+    if (m.key === currentModelKey) opt.selected = true;
+    modelSelect.appendChild(opt);
+  }
+  onModelSelectChange();
+}
+
+function onModelSelectChange() {
+  const selected = modelSelect.value;
+  if (selected && selected !== currentModelKey) {
+    modelSwitchBtn.style.display = 'inline-block';
+  } else {
+    modelSwitchBtn.style.display = 'none';
+  }
+}
+
+function showSwitchModal() {
+  const selected = modelSelect.value;
+  const model = availableModels.find(m => m.key === selected);
+  if (!model) return;
+
+  const current = availableModels.find(m => m.key === currentModelKey);
+  let info = 'Loading: ' + model.name + ' (' + model.vram_gb + ' GB VRAM, ctx ' + model.ctx_size + ')';
+  if (current) {
+    info = 'Current: ' + current.name + ' (' + current.vram_gb + ' GB)\\n' + info;
+  }
+  switchModalInfo.textContent = info;
+  switchConfirmBtn.disabled = false;
+  switchConfirmBtn.textContent = 'OK, Switch Model';
+  switchModal.classList.add('visible');
+}
+
+function hideSwitchModal() {
+  switchModal.classList.remove('visible');
+}
+
+async function confirmSwitch() {
+  const selected = modelSelect.value;
+  switchConfirmBtn.disabled = true;
+  switchConfirmBtn.textContent = 'Switching...';
+  modelStatus.textContent = 'Stopping current model...';
+
+  try {
+    const resp = await authFetch('/model/switch', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({model_key: selected})
+    });
+
+    if (resp.ok) {
+      const data = await resp.json();
+      modelStatus.textContent = '';
+      hideSwitchModal();
+      await loadModelInfo();
     } else {
-      headerModel.textContent = 'LLM offline';
+      const data = await resp.json();
+      modelStatus.textContent = 'Error: ' + (data.detail || 'Switch failed');
+      switchConfirmBtn.disabled = false;
+      switchConfirmBtn.textContent = 'OK, Switch Model';
     }
   } catch(e) {
-    headerModel.textContent = 'LLM offline';
+    modelStatus.textContent = 'Error: ' + e.message;
+    switchConfirmBtn.disabled = false;
+    switchConfirmBtn.textContent = 'OK, Switch Model';
   }
 }
 

@@ -333,6 +333,48 @@ class TestOrchestratorWithClassifier(unittest.TestCase):
         self.assertIn("nude", neg_text)
 
 
+class TestOutputPrefix(unittest.TestCase):
+    """Test per-user/persona output folder structure."""
+
+    def setUp(self):
+        self.orch = ImageOrchestrator()
+
+    def test_set_output_prefix_with_user_and_persona(self):
+        wf = sd15_basic("a cat")
+        self.orch._set_output_prefix(wf, user_id=42, persona_id=7)
+        self.assertEqual(wf["9"]["inputs"]["filename_prefix"], "42/7/persona_gen")
+
+    def test_set_output_prefix_without_persona(self):
+        wf = sd15_basic("a cat")
+        self.orch._set_output_prefix(wf, user_id=42, persona_id=None)
+        self.assertEqual(wf["9"]["inputs"]["filename_prefix"], "42/unknown/persona_gen")
+
+    def test_set_output_prefix_nsfw_workflow(self):
+        wf = sd15_nsfw("a painting")
+        self.orch._set_output_prefix(wf, user_id=99, persona_id=3)
+        self.assertEqual(wf["9"]["inputs"]["filename_prefix"], "99/3/persona_nsfw")
+
+    def test_set_output_prefix_safe_workflow(self):
+        wf = sdxl_safe("a rainbow")
+        self.orch._set_output_prefix(wf, user_id=1, persona_id=10)
+        self.assertEqual(wf["9"]["inputs"]["filename_prefix"], "1/10/persona_safe")
+
+    def test_generate_applies_output_prefix(self):
+        """Full generate flow should set the output prefix on the workflow."""
+        mock_client = MagicMock()
+        mock_client.is_alive.return_value = True
+        mock_client.generate.return_value = {
+            "prompt_id": "x", "images": [], "success": True, "error": None,
+        }
+        self.orch.client = mock_client
+
+        self.orch.generate("a flower", user_id=52, persona_id=3)
+
+        submitted_workflow = mock_client.generate.call_args[0][0]
+        prefix = submitted_workflow["9"]["inputs"]["filename_prefix"]
+        self.assertEqual(prefix, "52/3/persona_gen")
+
+
 class TestComfyUIClient(unittest.TestCase):
     """Test ComfyUI client (mocked — no real server needed)."""
 

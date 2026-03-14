@@ -67,7 +67,7 @@ from echo.echo_prompt_builder import build_echo_prompt
 from core.llm_client import call_llm
 from core.prompt_builder import build_system_prompt, build_message_list
 from analysis.emotion_handler import EmotionVectorGenerator, PersonaEmotionEngine
-from analysis.knowledge_extractor import KnowledgeExtractor
+from analysis.llm_knowledge_extractor import LLMKnowledgeExtractor
 from tools.tool_call_parser import has_tool_calls, execute_tool_calls, ToolCallResult
 from tools.tool_registry import get_tool, get_tool_definitions
 
@@ -75,7 +75,7 @@ from tools.tool_registry import get_tool, get_tool_definitions
 # Module-level singletons
 _emotion_gen = EmotionVectorGenerator()
 _persona_engine = PersonaEmotionEngine()
-_knowledge_extractor = KnowledgeExtractor()
+_knowledge_extractor = LLMKnowledgeExtractor()
 
 
 def run_conversation_turn(
@@ -209,6 +209,7 @@ def run_conversation_turn(
             # Inject execution context
             arguments["user_id"] = user_id
             arguments["user_permission"] = user_permission
+            arguments["persona_id"] = persona_id
 
             try:
                 result = tool_func(**arguments)
@@ -315,9 +316,12 @@ def run_conversation_turn(
         save_persona_emotion(user_id, persona_id, new_persona_emotions)
 
         # 15. Knowledge extraction — extract from user input
+        context_msgs = conversation_buffer.get_messages(user_id, session_id, limit=3)
         extracted = _knowledge_extractor.extract_all(
             user_input, role="user",
             source_type="conversation", source_ref=str(message_id),
+            context_messages=context_msgs,
+            nsfw_mode=nsfw_mode, persona_slug=persona.get("slug"),
         )
 
         # 15a. Bulk-store extracted facts and entities

@@ -83,6 +83,7 @@ class ImageOrchestrator:
         prompt: str,
         user_id: int,
         user_permission: str = "adult",
+        persona_id: int = None,
         workflow_name: str = None,
         width: int = 512,
         height: int = 512,
@@ -96,6 +97,7 @@ class ImageOrchestrator:
             prompt: Text description of the desired image
             user_id: The requesting user's ID (for logging and permissions)
             user_permission: "adult", "teen", or "child"
+            persona_id: Persona ID (used for output folder structure)
             workflow_name: Override workflow selection (default: auto-select)
             width: Image width in pixels
             height: Image height in pixels
@@ -140,6 +142,9 @@ class ImageOrchestrator:
             height=height,
             seed=seed,
         )
+
+        # 4b. Override filename_prefix for per-user/persona output folders
+        self._set_output_prefix(workflow, user_id, persona_id)
 
         # 5. Submit to ComfyUI
         result = self.client.generate(workflow)
@@ -213,6 +218,22 @@ class ImageOrchestrator:
             return "sd15_basic"
         else:
             return "sd15_basic"
+
+    def _set_output_prefix(self, workflow: dict, user_id: int, persona_id: int = None):
+        """
+        Override the filename_prefix on all SaveImage nodes to use
+        per-user/persona subdirectories: {user_id}/{persona_id}/persona_gen
+
+        ComfyUI natively supports subdirectories in filename_prefix —
+        it creates the folders automatically.
+        """
+        persona_folder = str(persona_id) if persona_id else "unknown"
+        for node in workflow.values():
+            if node.get("class_type") == "SaveImage":
+                base_prefix = node["inputs"].get("filename_prefix", "persona_gen")
+                node["inputs"]["filename_prefix"] = (
+                    f"{user_id}/{persona_folder}/{base_prefix}"
+                )
 
     def _error(self, message: str) -> dict:
         return {

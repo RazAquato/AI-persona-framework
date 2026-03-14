@@ -88,48 +88,34 @@ class TestContextBuilder(unittest.TestCase):
         self.assertIsInstance(context["raw_input"], str)
         self.assertIsInstance(context["embedded_input"], list)
 
-    def test_context_with_memory_scope_all(self):
-        """memory_scope with tier2='all' should include identity and knowledge facts."""
+    def test_context_with_memory_scope_includes_both_tiers(self):
+        """All chatbot personas should see both identity and emotional facts."""
         store_fact(self.user_id, "Context scope identity test", tier="identity")
-        store_fact(self.user_id, "Context scope knowledge test", tier="knowledge")
-        scope = {"tier1": True, "tier2": "all", "tier3": "private"}
+        store_fact(self.user_id, "Context scope emotional test", tier="emotional")
+        scope = {"tier1": True, "tier2": "all"}
         context = build_context(self.user_id, "test input", memory_scope=scope)
         fact_texts = [f[1] for f in context["facts"]]
         self.assertTrue(any("identity test" in t for t in fact_texts))
-        self.assertTrue(any("knowledge test" in t for t in fact_texts))
-
-    def test_context_with_memory_scope_excludes_relationship(self):
-        """Tier 3 (relationship) facts should not appear in context."""
-        store_fact(self.user_id, "Context relationship secret", tier="relationship")
-        scope = {"tier1": True, "tier2": "all", "tier3": "private"}
-        context = build_context(self.user_id, "test input", memory_scope=scope)
-        fact_texts = [f[1] for f in context["facts"]]
-        self.assertFalse(any("relationship secret" in t for t in fact_texts))
+        self.assertTrue(any("emotional test" in t for t in fact_texts))
 
     def test_context_without_scope_returns_all(self):
-        """No memory_scope = backwards-compatible, returns all tiers."""
-        store_fact(self.user_id, "No scope all tiers", tier="relationship")
+        """No memory_scope = returns all facts."""
+        store_fact(self.user_id, "No scope all tiers", tier="emotional")
         context = build_context(self.user_id, "test input", memory_scope=None)
         fact_texts = [f[1] for f in context["facts"]]
         self.assertTrue(any("No scope all tiers" in t for t in fact_texts))
 
     # --- Additional M2 coverage ---
 
-    def test_context_with_tier2_as_list(self):
-        """tier2 as topic list should still include knowledge facts."""
-        store_fact(self.user_id, "Topic list knowledge fact", tier="knowledge")
-        scope = {"tier1": True, "tier2": ["technology", "gaming"], "tier3": "private"}
+    def test_context_with_scope_still_returns_all(self):
+        """Any memory_scope config should still return all facts (two-tier model)."""
+        store_fact(self.user_id, "Scope compat identity fact", tier="identity")
+        store_fact(self.user_id, "Scope compat emotional fact", tier="emotional")
+        scope = {"tier1": True, "tier2": True}
         context = build_context(self.user_id, "test input", memory_scope=scope)
         fact_texts = [f[1] for f in context["facts"]]
-        self.assertTrue(any("Topic list knowledge" in t for t in fact_texts))
-
-    def test_context_with_tier2_as_boolean_true(self):
-        """tier2=True should include knowledge facts."""
-        store_fact(self.user_id, "Bool true knowledge fact", tier="knowledge")
-        scope = {"tier1": True, "tier2": True, "tier3": "private"}
-        context = build_context(self.user_id, "test input", memory_scope=scope)
-        fact_texts = [f[1] for f in context["facts"]]
-        self.assertTrue(any("Bool true knowledge" in t for t in fact_texts))
+        self.assertTrue(any("Scope compat identity" in t for t in fact_texts))
+        self.assertTrue(any("Scope compat emotional" in t for t in fact_texts))
 
     def test_context_empty_user(self):
         """New user with no data should return empty lists without errors."""

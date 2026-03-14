@@ -307,6 +307,57 @@ class TestAuthChatEndpoint(unittest.TestCase):
         self.assertEqual(resp.status_code, 403)
 
 
+class TestModelEndpoints(unittest.TestCase):
+    """Tests for model listing and switching endpoints."""
+
+    @classmethod
+    def setUpClass(cls):
+        from interface.api.app import app, get_current_user
+        cls.app = app
+        cls.app.dependency_overrides[get_current_user] = lambda: 9999
+        cls.client = TestClient(cls.app)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.app.dependency_overrides.clear()
+
+    @patch("interface.api.app.list_available_models")
+    def test_models_list(self, mock_list):
+        mock_list.return_value = [
+            {"key": "qwen9b", "name": "Qwen 9B", "vram_gb": 9.5, "ctx_size": 8192},
+            {"key": "tinyllama", "name": "TinyLlama", "vram_gb": 1, "ctx_size": 2048},
+        ]
+        resp = self.client.get("/models")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertIn("models", data)
+        self.assertEqual(len(data["models"]), 2)
+        self.assertEqual(data["models"][0]["key"], "qwen9b")
+        self.assertEqual(data["models"][0]["vram_gb"], 9.5)
+
+    @patch("interface.api.app.switch_model")
+    def test_model_switch_success(self, mock_switch):
+        mock_switch.return_value = {
+            "success": True, "model_key": "tinyllama",
+            "pid": 1234, "killed_previous": True,
+        }
+        resp = self.client.post("/model/switch", json={"model_key": "tinyllama"})
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data["success"])
+        mock_switch.assert_called_once_with("tinyllama")
+
+    @patch("interface.api.app.switch_model")
+    def test_model_switch_failure(self, mock_switch):
+        mock_switch.return_value = {
+            "success": False, "model_key": "bad",
+            "error": "Unknown model: bad",
+        }
+        resp = self.client.post("/model/switch", json={"model_key": "bad"})
+        self.assertEqual(resp.status_code, 500)
+        self.assertIn("Unknown model", resp.json()["detail"])
+
+
 class TestPersonaCRUD(unittest.TestCase):
     """Test persona CRUD endpoints."""
 

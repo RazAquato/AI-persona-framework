@@ -25,7 +25,7 @@ Extracts structured knowledge from conversation text:
 
 Each extracted item includes:
 - text: the extracted knowledge
-- tier: identity / knowledge / relationship
+- tier: identity / emotional
 - entity_type: person / pet / place / event / thing / None
 - topics: list of topic strings
 - confidence: 0.0-1.0 extraction confidence
@@ -241,7 +241,7 @@ class KnowledgeExtractor:
                     entity_text = self._capitalize_names(entity_text)
                     results.append({
                         "text": entity_text,
-                        "tier": "knowledge",
+                        "tier": "identity",
                         "entity_type": entity_type,
                         "confidence": 0.7,
                         "tags": ["auto_extracted", "entity", entity_type],
@@ -262,7 +262,7 @@ class KnowledgeExtractor:
                     fact_text = template.format(*groups)
                     results.append({
                         "text": fact_text,
-                        "tier": "knowledge",
+                        "tier": "identity",
                         "entity_type": None,
                         "confidence": 0.7,
                         "tags": ["auto_extracted", "preference"],

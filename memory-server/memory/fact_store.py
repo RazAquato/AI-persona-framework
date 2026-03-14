@@ -21,9 +21,12 @@ CRUD for structured facts in PostgreSQL.
 
 Facts table columns:
     id, user_id, text, source_chat_id (legacy), relevance_score, tags,
-    source_type, source_ref, tier, entity_type, created_at
+    source_type, source_ref, tier, entity_type, valence, created_at
 
-Tier values: 'identity', 'knowledge', 'relationship'
+Tier values: 'identity', 'emotional'
+  - identity: Echo-safe facts (name, age, location, preferences, positive people mentions)
+  - emotional: chatbot-only facts (negative people mentions, struggles, complaints)
+Valence values: 'positive', 'neutral', 'negative', or NULL
 Source types: 'conversation', 'image_analysis', 'document', 'photo_archive', 'diary_entry'
 Entity types: 'person', 'pet', 'place', 'event', 'thing', or NULL
 """
@@ -51,7 +54,8 @@ def get_connection():
 
 def store_fact(user_id: int, fact: str, tags: list = None, relevance_score: float = None,
                source_chat_id: int = None, source_type: str = "conversation",
-               source_ref: str = None, tier: str = "knowledge", entity_type: str = None):
+               source_ref: str = None, tier: str = "identity", entity_type: str = None,
+               valence: str = None):
     """
     Store a structured fact associated with a user.
     Checks for near-duplicate text before inserting.
@@ -65,11 +69,11 @@ def store_fact(user_id: int, fact: str, tags: list = None, relevance_score: floa
         with conn.cursor() as cur:
             cur.execute("""
                 INSERT INTO facts (user_id, text, tags, relevance_score, source_chat_id,
-                                   source_type, source_ref, tier, entity_type)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                   source_type, source_ref, tier, entity_type, valence)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id;
             """, (user_id, fact, tags, relevance_score, source_chat_id,
-                  source_type, source_ref, tier, entity_type))
+                  source_type, source_ref, tier, entity_type, valence))
             fact_id = cur.fetchone()[0]
         conn.commit()
         return fact_id
@@ -94,9 +98,10 @@ def _fact_exists(user_id: int, fact_text: str) -> bool:
         conn.close()
 
 
-def make_fact_blob(text: str, tier: str = "knowledge", entity_type: str = None,
+def make_fact_blob(text: str, tier: str = "identity", entity_type: str = None,
                    confidence: float = 0.5, tags: list = None,
-                   source_type: str = "conversation", source_ref: str = None) -> dict:
+                   source_type: str = "conversation", source_ref: str = None,
+                   valence: str = None) -> dict:
     """
     Factory function for creating fact dicts in the standard schema.
     Use this instead of constructing dicts manually.
@@ -109,6 +114,7 @@ def make_fact_blob(text: str, tier: str = "knowledge", entity_type: str = None,
         "tags": tags or [],
         "source_type": source_type,
         "source_ref": source_ref,
+        "valence": valence,
     }
 
 
@@ -163,8 +169,8 @@ def store_fact_blobs(user_id: int, blobs: list, source_type: str = None,
 
                 cur.execute("""
                     INSERT INTO facts (user_id, text, tags, relevance_score,
-                                       source_type, source_ref, tier, entity_type)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                                       source_type, source_ref, tier, entity_type, valence)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING id;
                 """, (
                     user_id, text,
@@ -172,8 +178,9 @@ def store_fact_blobs(user_id: int, blobs: list, source_type: str = None,
                     blob.get("confidence"),
                     blob_source_type,
                     blob_source_ref,
-                    blob.get("tier", "knowledge"),
+                    blob.get("tier", "identity"),
                     blob.get("entity_type"),
+                    blob.get("valence"),
                 ))
                 ids.append(cur.fetchone()[0])
         conn.commit()
@@ -250,6 +257,26 @@ def get_facts_by_entity_type(user_id: int, entity_type: str):
                 ORDER BY id DESC;
             """, (user_id, entity_type))
             return cur.fetchall()
+    finally:
+        conn.close()
+
+
+def delete_facts_by_source(user_id: int, source_type: str) -> int:
+    """
+    Delete all facts for a user with a given source_type.
+    Used by sync adapters that do full-snapshot refreshes.
+    Returns the number of deleted rows.
+    """
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM facts WHERE user_id = %s AND source_type = %s;",
+                (user_id, source_type)
+            )
+            count = cur.rowcount
+        conn.commit()
+        return count
     finally:
         conn.close()
 

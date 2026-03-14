@@ -18,13 +18,12 @@
 Context Builder
 ---------------
 Aggregates all memory layers into a context dict for the engine.
-Supports tier-based fact filtering based on persona memory_scope config.
 
-Memory scope config (from persona template):
-    memory_scope:
-        tier1: true        # always included
-        tier2: "all" | ["gaming", "technology"]  # topic filter
-        tier3: "private"   # always private to this persona
+Two-tier fact model:
+  - identity: Echo-safe facts (name, preferences, positive people mentions)
+  - emotional: chatbot-only facts (negative people mentions, struggles)
+
+All chatbot personas see both tiers. Echo sees identity only (filtered in corpus_builder).
 """
 
 from memory.embedding import embed_text
@@ -84,33 +83,11 @@ def build_context(user_id: int, input_text: str, top_k: int = 5,
 
 def _get_scoped_facts(user_id: int, memory_scope: dict = None) -> list:
     """
-    Get facts filtered by the persona's memory scope.
+    Get facts for chatbot persona context.
 
-    If no memory_scope is provided, returns all facts (backwards compatible).
-
-    Tier filtering:
-    - Tier 1 (identity): always included
-    - Tier 2 (knowledge): included if scope says "all" or matches topic domains
-    - Tier 3 (relationship): never included here (handled by chat history per-session)
+    All chatbot personas see both identity and emotional facts.
+    The memory_scope parameter is accepted for backwards compatibility but
+    no longer affects tier filtering — the two-tier model gives all personas
+    full access. Echo privacy filtering happens in corpus_builder instead.
     """
-    if memory_scope is None:
-        # No scope = return everything (backwards compatible)
-        return get_facts(user_id)
-
-    # Always include identity facts
-    tiers = ["identity"]
-
-    # Include knowledge tier based on scope config
-    tier2_config = memory_scope.get("tier2", "all")
-    if tier2_config == "all" or tier2_config is True:
-        tiers.append("knowledge")
-    elif isinstance(tier2_config, list) and len(tier2_config) > 0:
-        # Filter knowledge facts by topic domains
-        # For now, include all knowledge facts — topic filtering
-        # will be refined when facts get topic tags
-        tiers.append("knowledge")
-
-    # Tier 3 (relationship) is intentionally excluded from context_builder.
-    # Relationship data comes from the chat history which is already per-session/persona.
-
-    return get_facts_by_tier(user_id, tiers)
+    return get_facts(user_id)

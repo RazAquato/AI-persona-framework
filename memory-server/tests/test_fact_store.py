@@ -141,20 +141,20 @@ class TestFactStore(unittest.TestCase):
 
     def test_get_facts_by_tier_single(self):
         store_fact(self.test_user_id, "Identity tier fact", tier="identity")
-        store_fact(self.test_user_id, "Knowledge tier fact", tier="knowledge")
+        store_fact(self.test_user_id, "Emotional tier fact", tier="emotional")
         identity_facts = get_facts_by_tier(self.test_user_id, ["identity"])
         self.assertTrue(all(f[4] == "identity" for f in identity_facts))
 
     def test_get_facts_by_tier_multiple(self):
         store_fact(self.test_user_id, "Multi-tier identity", tier="identity")
-        store_fact(self.test_user_id, "Multi-tier knowledge", tier="knowledge")
-        results = get_facts_by_tier(self.test_user_id, ["identity", "knowledge"])
+        store_fact(self.test_user_id, "Multi-tier emotional", tier="emotional")
+        results = get_facts_by_tier(self.test_user_id, ["identity", "emotional"])
         tiers = {f[4] for f in results}
-        self.assertTrue(tiers.issubset({"identity", "knowledge"}))
+        self.assertTrue(tiers.issubset({"identity", "emotional"}))
 
     def test_get_facts_by_entity_type(self):
         store_fact(self.test_user_id, "User has pet named Rex",
-                   tier="knowledge", entity_type="pet")
+                   tier="identity", entity_type="pet")
         results = get_facts_by_entity_type(self.test_user_id, "pet")
         self.assertTrue(any("Rex" in f[1] for f in results))
 
@@ -182,9 +182,9 @@ class TestFactStore(unittest.TestCase):
         self.assertEqual(len(results), 1, "Dedup should be case-insensitive")
 
     def test_get_facts_with_tier_filter(self):
-        store_fact(self.test_user_id, "Tier filter test", tier="relationship")
-        results = get_facts(self.test_user_id, tier="relationship")
-        self.assertTrue(all(f[4] == "relationship" for f in results))
+        store_fact(self.test_user_id, "Tier filter test", tier="emotional")
+        results = get_facts(self.test_user_id, tier="emotional")
+        self.assertTrue(all(f[4] == "emotional" for f in results))
 
     # --- Additional M2 coverage ---
 
@@ -201,7 +201,7 @@ class TestFactStore(unittest.TestCase):
 
     def test_update_fact_tier_and_entity_type(self):
         """update_fact should update tier and entity_type fields."""
-        fact_id = store_fact(self.test_user_id, "Update tier test", tier="knowledge")
+        fact_id = store_fact(self.test_user_id, "Update tier test", tier="emotional")
         self.assertIsNotNone(fact_id)
         update_fact(fact_id, tier="identity", entity_type="person")
         results = get_facts(self.test_user_id)
@@ -258,10 +258,11 @@ class TestFactStore(unittest.TestCase):
     def test_make_fact_blob_defaults(self):
         """make_fact_blob defaults should be sensible."""
         blob = make_fact_blob("Minimal")
-        self.assertEqual(blob["tier"], "knowledge")
+        self.assertEqual(blob["tier"], "identity")
         self.assertIsNone(blob["entity_type"])
         self.assertEqual(blob["tags"], [])
         self.assertEqual(blob["source_type"], "conversation")
+        self.assertIsNone(blob["valence"])
 
     def test_store_fact_blobs_basic(self):
         """store_fact_blobs should insert multiple facts in one call."""
@@ -304,9 +305,51 @@ class TestFactStore(unittest.TestCase):
 
     def test_store_fact_blobs_skips_empty_text(self):
         """Blobs with empty text should be skipped."""
-        blobs = [{"text": "", "tier": "knowledge"}, {"text": "   ", "tier": "knowledge"}]
+        blobs = [{"text": "", "tier": "identity"}, {"text": "   ", "tier": "identity"}]
         ids = store_fact_blobs(self.test_user_id, blobs)
         self.assertEqual(ids, [None, None])
+
+    # --- Valence support ---
+
+    def test_store_fact_with_valence(self):
+        """store_fact should accept and store valence."""
+        fact_id = store_fact(
+            self.test_user_id, "User's friend Lars is great",
+            tier="identity", entity_type="person", valence="positive"
+        )
+        self.assertIsNotNone(fact_id)
+
+    def test_make_fact_blob_with_valence(self):
+        """make_fact_blob should include valence."""
+        blob = make_fact_blob("User dislikes Tom", tier="emotional",
+                              entity_type="person", valence="negative")
+        self.assertEqual(blob["valence"], "negative")
+        self.assertEqual(blob["tier"], "emotional")
+
+    def test_store_fact_blobs_with_valence(self):
+        """store_fact_blobs should handle blobs with valence."""
+        blobs = [
+            make_fact_blob("Valence test positive 001", tier="identity",
+                           entity_type="person", valence="positive"),
+            make_fact_blob("Valence test negative 002", tier="emotional",
+                           entity_type="person", valence="negative"),
+        ]
+        ids = store_fact_blobs(self.test_user_id, blobs)
+        self.assertTrue(all(isinstance(i, int) for i in ids))
+
+    def test_get_facts_by_tier_emotional(self):
+        """get_facts_by_tier should work with the new 'emotional' tier."""
+        store_fact(self.test_user_id, "Emotional tier test fact", tier="emotional")
+        results = get_facts_by_tier(self.test_user_id, ["emotional"])
+        self.assertTrue(any(f[4] == "emotional" for f in results))
+
+    def test_get_facts_by_tier_identity_and_emotional(self):
+        """get_facts_by_tier with both tiers should return both."""
+        store_fact(self.test_user_id, "Two-tier identity test", tier="identity")
+        store_fact(self.test_user_id, "Two-tier emotional test", tier="emotional")
+        results = get_facts_by_tier(self.test_user_id, ["identity", "emotional"])
+        tiers = {f[4] for f in results}
+        self.assertTrue(tiers.issubset({"identity", "emotional"}))
 
 
 if __name__ == "__main__":

@@ -41,7 +41,8 @@ CHAT_URL = LLM_SERVER.rstrip("/") + "/v1/chat/completions"
 HEADERS = {"Content-Type": "application/json"}
 
 
-def call_llm(messages, temperature=0.7, max_tokens=1024, tools=None):
+def call_llm(messages, temperature=0.7, max_tokens=1024, tools=None,
+             response_format=None):
     """
     Call llama.cpp's OpenAI-compatible chat completions endpoint.
 
@@ -50,6 +51,8 @@ def call_llm(messages, temperature=0.7, max_tokens=1024, tools=None):
         temperature: Sampling temperature.
         max_tokens: Max tokens to generate.
         tools: Optional list of tool definitions (OpenAI function-calling format).
+        response_format: Optional response format spec (e.g. JSON schema for
+                         grammar-constrained output). Passed directly to the API.
 
     Returns:
         {
@@ -66,6 +69,8 @@ def call_llm(messages, temperature=0.7, max_tokens=1024, tools=None):
     }
     if tools:
         payload["tools"] = tools
+    if response_format:
+        payload["response_format"] = response_format
 
     try:
         resp = requests.post(CHAT_URL, json=payload, headers=HEADERS, timeout=120)

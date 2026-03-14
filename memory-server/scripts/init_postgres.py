@@ -120,8 +120,9 @@ CREATE TABLE facts (
     tags TEXT[],
     source_type TEXT DEFAULT 'conversation',
     source_ref TEXT,
-    tier TEXT DEFAULT 'knowledge',
+    tier TEXT DEFAULT 'identity',
     entity_type TEXT,
+    valence TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 """)

@@ -2,6 +2,7 @@
 # Copyright (C) 2025 Kenneth Haider
 
 import unittest
+import json
 from unittest.mock import patch, MagicMock
 from core.engine import run_conversation_turn
 from memory.persona_emotion_store import DEFAULT_EMOTIONS
@@ -18,7 +19,7 @@ FAKE_PERSONA = {
     "nsfw_capable": True,
     "nsfw_prompt_addon": None,
     "nsfw_system_prompt_addon": None,
-    "memory_scope": {"tier1": True, "tier2": "all", "tier3": "private"},
+    "memory_scope": {"tier1": True, "tier2": "all"},
     "is_public": False,
 }
 

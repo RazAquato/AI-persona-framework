@@ -3,8 +3,10 @@
 # GPLv3 License - See <https://www.gnu.org/licenses/>
 
 import unittest
+from unittest.mock import patch
 from echo.traits_extractor import extract_traits, _analyze_style, _analyze_vocabulary
 from echo.echo_prompt_builder import build_echo_prompt
+from echo.corpus_builder import build_corpus
 
 
 class TestTraitsExtractor(unittest.TestCase):
@@ -97,7 +99,7 @@ class TestTraitsExtractor(unittest.TestCase):
             ["test"],
             facts=[
                 {"text": "User's name is Kenneth", "tier": "identity", "entity_type": "person"},
-                {"text": "User loves hiking", "tier": "knowledge", "entity_type": None},
+                {"text": "User loves hiking", "tier": "identity", "entity_type": None},
             ],
         )
         traits = extract_traits(corpus)
@@ -174,6 +176,37 @@ class TestEchoPromptBuilder(unittest.TestCase):
         }
         prompt = build_echo_prompt(traits)
         self.assertIn("Do NOT break character", prompt)
+
+
+class TestCorpusBuilderTierFilter(unittest.TestCase):
+    """Verify that corpus builder only includes identity-tier facts."""
+
+    @patch("echo.corpus_builder._get_user_messages", return_value=[])
+    @patch("echo.corpus_builder.get_user_topics", return_value=[])
+    @patch("echo.corpus_builder.get_facts_by_tier")
+    def test_corpus_builder_filters_to_identity_tier(self, mock_facts, mock_topics, mock_msgs):
+        """build_corpus should call get_facts_by_tier with ['identity'] only."""
+        mock_facts.return_value = [
+            (1, "User's name is Kenneth", None, 0.8, "identity", "person"),
+        ]
+        corpus = build_corpus(user_id=9999)
+        mock_facts.assert_called_once_with(9999, ["identity"])
+        # Emotional facts should not be requested
+        call_args = mock_facts.call_args
+        self.assertEqual(call_args[0][1], ["identity"])
+
+    @patch("echo.corpus_builder._get_user_messages", return_value=[])
+    @patch("echo.corpus_builder.get_user_topics", return_value=[])
+    @patch("echo.corpus_builder.get_facts_by_tier")
+    def test_corpus_excludes_emotional_facts(self, mock_facts, mock_topics, mock_msgs):
+        """Emotional-tier facts should never appear in Echo corpus."""
+        # Simulate only identity facts being returned (as expected)
+        mock_facts.return_value = [
+            (1, "User likes hiking", None, 0.7, "identity", None),
+        ]
+        corpus = build_corpus(user_id=9999)
+        for fact in corpus["facts"]:
+            self.assertEqual(fact["tier"], "identity")
 
 
 if __name__ == "__main__":
