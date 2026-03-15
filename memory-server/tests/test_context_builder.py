@@ -213,6 +213,47 @@ class TestContextBuilder(unittest.TestCase):
             delete_persona(pid1)
             delete_persona(pid2)
 
+    # --- Shared facts visible to all personas ---
+
+    def test_shared_identity_fact_visible_to_any_persona(self):
+        """Identity-tier facts without persona_id should be visible to every persona."""
+        pid1 = create_persona(self.user_id, "ctx_shared_p1", "Shared P1")
+        pid2 = create_persona(self.user_id, "ctx_shared_p2", "Shared P2")
+        try:
+            fid = store_fact(self.user_id, "Shared identity fact for all ZZZ",
+                             tier="identity", persona_id=None)
+            ctx1 = build_context(self.user_id, "test", persona_id=pid1)
+            ctx2 = build_context(self.user_id, "test", persona_id=pid2)
+            self.assertTrue(any("Shared identity fact for all ZZZ" in f[1]
+                                for f in ctx1["facts"]))
+            self.assertTrue(any("Shared identity fact for all ZZZ" in f[1]
+                                for f in ctx2["facts"]))
+            if fid:
+                delete_fact(fid)
+        finally:
+            delete_persona(pid1)
+            delete_persona(pid2)
+
+    def test_emotional_fact_with_persona_id_isolated(self):
+        """Emotional-tier facts stamped with persona_id (the engine pattern)
+        should be visible only to the owning persona, not to others."""
+        pid_owner = create_persona(self.user_id, "ctx_emo_owner", "EmoOwner")
+        pid_other = create_persona(self.user_id, "ctx_emo_other", "EmoOther")
+        try:
+            fid = store_fact(self.user_id, "Emotional secret for owner ZZZ",
+                             tier="emotional", persona_id=pid_owner)
+            ctx_owner = build_context(self.user_id, "test", persona_id=pid_owner)
+            ctx_other = build_context(self.user_id, "test", persona_id=pid_other)
+            self.assertTrue(any("Emotional secret for owner ZZZ" in f[1]
+                                for f in ctx_owner["facts"]))
+            self.assertFalse(any("Emotional secret for owner ZZZ" in f[1]
+                                 for f in ctx_other["facts"]))
+            if fid:
+                delete_fact(fid)
+        finally:
+            delete_persona(pid_owner)
+            delete_persona(pid_other)
+
     # --- Phase 2: Salience filtering ---
 
     def test_unlinked_facts_always_visible(self):

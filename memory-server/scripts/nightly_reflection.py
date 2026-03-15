@@ -25,8 +25,11 @@ Usage:
 import os
 import sys
 import json
+import logging
 import argparse
 from datetime import datetime, timedelta
+
+log = logging.getLogger(__name__)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MEMORY_PATH = os.path.abspath(os.path.join(BASE_DIR, ".."))
@@ -224,7 +227,7 @@ def classify_topic_emotions(topic_name: str, messages: list) -> list:
         return result[:4]  # cap at 4
 
     except Exception as e:
-        print(f"[reflection] LLM classification failed for '{topic_name}': {e}")
+        log.warning("LLM classification failed for '%s': %s", topic_name, e)
         return _regex_fallback(topic_name, user_msgs)
 
 
@@ -247,7 +250,8 @@ def _regex_fallback(topic_name: str, user_msgs: list) -> list:
             if len(result) >= 4:
                 break
         return result
-    except Exception:
+    except Exception as e:
+        log.warning("Regex fallback failed for emotion classification: %s", e)
         return []
 
 

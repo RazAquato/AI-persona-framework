@@ -45,6 +45,9 @@ for p in [LLM_CLIENT_ROOT, MEMORY_PATH, SHARED_PATH]:
     if p not in sys.path:
         sys.path.append(p)
 
+import logging
+log = logging.getLogger(__name__)
+
 # Load .env configs
 SHARED_ENV = os.path.abspath(os.path.join(SHARED_PATH, "config", ".env"))
 LOCAL_ENV = os.path.abspath(os.path.join(LLM_CLIENT_ROOT, "config", ".env"))
@@ -132,8 +135,8 @@ def run_conversation_turn(
             _conn.close()
             if group_id:
                 boost_group_salience(user_id, persona_id, group_id)
-        except Exception:
-            pass  # non-critical
+        except Exception as e:
+            log.debug("Group salience boost skipped: %s", e)
 
     # 3. Build memory context with domain + persona filtering
     context = build_context(user_id, user_input, memory_scope=memory_scope,

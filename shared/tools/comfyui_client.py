@@ -31,12 +31,15 @@ The client:
 """
 
 import json
+import logging
 import uuid
 import time
 import urllib.request
 import urllib.error
 from pathlib import Path
 from typing import Optional
+
+log = logging.getLogger(__name__)
 
 
 COMFYUI_OUTPUT_DIR = Path("/home/kenneth/AI-persona-framework/comfyui/output")
@@ -102,8 +105,8 @@ class ComfyUIClient:
                     history = json.loads(resp.read())
                     if prompt_id in history:
                         return True
-            except (urllib.error.URLError, json.JSONDecodeError):
-                pass
+            except (urllib.error.URLError, json.JSONDecodeError) as e:
+                log.debug("ComfyUI poll attempt failed: %s", e)
             time.sleep(poll_interval)
         return False
 

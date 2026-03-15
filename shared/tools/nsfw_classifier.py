@@ -33,6 +33,10 @@ from typing import Optional
 
 from PIL import Image
 
+import logging
+
+log = logging.getLogger(__name__)
+
 _classifier = None
 _MODEL_NAME = "Falconsai/nsfw_image_detection"
 
@@ -112,8 +116,8 @@ def check_output(image_path: str, user_permission: str) -> dict:
         # Delete the offending image
         try:
             os.remove(image_path)
-        except OSError:
-            pass
+        except OSError as e:
+            log.warning("Failed to delete blocked NSFW image %s: %s", image_path, e)
 
     return {
         "nsfw_score": classification["nsfw_score"],

@@ -37,6 +37,9 @@ import json
 import re
 import os
 import sys
+import logging
+
+log = logging.getLogger(__name__)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SHARED_PATH = os.path.abspath(os.path.join(BASE_DIR, ".."))
@@ -286,7 +289,8 @@ class LLMKnowledgeExtractor:
 
             return parsed
 
-        except (json.JSONDecodeError, Exception):
+        except (json.JSONDecodeError, Exception) as e:
+            log.warning("LLM extraction failed: %s", e)
             return None
 
     def _contains_private_keywords(self, text):
