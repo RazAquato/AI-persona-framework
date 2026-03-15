@@ -61,6 +61,7 @@ from memory.persona_store import get_persona
 from memory.fact_store import store_fact, store_fact_blobs
 from memory.topic_graph import create_topic_relation, link_all_topics, create_entity, link_entity_to_topic, ingest_extracted_knowledge
 from memory.topic_store import bump_salience, boost_group_salience
+from memory.ingest_pipeline import ingest as ingest_facts
 from memory.buffer import conversation_buffer
 from echo.corpus_builder import build_corpus
 from echo.traits_extractor import extract_traits
@@ -344,21 +345,12 @@ def run_conversation_turn(
         )
 
         # 15a. Stamp persona_id on emotional-tier facts (conversation-private)
-        all_blobs = extracted["facts"] + extracted["entities"]
-        for blob in all_blobs:
+        for blob in extracted["facts"] + extracted["entities"]:
             if blob.get("tier") == "emotional":
                 blob["persona_id"] = persona_id
 
-        # 15b. Bulk-store extracted facts and entities
-        store_fact_blobs(user_id, all_blobs)
-
-        # 15c. Populate Neo4j topic graph + entity nodes
-        ingest_extracted_knowledge(user_id, extracted)
-
-        # 15d. Bump topic salience for detected topics
-        topic_names = [t["topic"] for t in extracted.get("topics", [])]
-        if topic_names and persona_id:
-            bump_salience(user_id, persona_id, topic_names)
+        # 15b-d. Unified ingestion: store facts, populate Neo4j, bump salience
+        ingest_facts(user_id, extracted, persona_id=persona_id)
 
     # 16. Update conversation buffer
     conversation_buffer.add_message(user_id, session_id, "user", user_input)

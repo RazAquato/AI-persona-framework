@@ -56,7 +56,8 @@ for p in [SHARED_PATH, MEMORY_PATH]:
     if p not in sys.path:
         sys.path.append(p)
 
-from memory.fact_store import store_fact_blobs, make_fact_blob, delete_facts_by_source
+from memory.fact_store import make_fact_blob
+from memory.ingest_pipeline import ingest as ingest_facts
 
 
 class ImmichClient:
@@ -267,11 +268,24 @@ def sync_immich(user_id: int, base_url: str = None, api_key: str = None,
                 domain="other",
             ))
 
-    # 4. Store: delete old snapshot, write new one
-    deleted_old = 0
+    # 4. Build topics from the data categories
+    topics = []
+    if person_counts:
+        topics.append({"topic": "family", "confidence": 0.8})
+        topics.append({"topic": "photography", "confidence": 0.7})
+    if city_counter:
+        topics.append({"topic": "travel", "confidence": 0.7})
+    if device_counter:
+        topics.append({"topic": "technology", "confidence": 0.5})
+
+    # 5. Ingest through unified pipeline (snapshot mode)
     if not dry_run:
-        deleted_old = delete_facts_by_source(user_id, "immich")
-        store_fact_blobs(user_id, facts, source_type="immich")
+        extracted = {"facts": facts, "entities": [], "topics": topics}
+        result = ingest_facts(user_id, extracted,
+                              source_type="immich", snapshot=True)
+        deleted_old = result.get("facts_skipped", 0)  # approximate
+    else:
+        deleted_old = 0
 
     return {
         "people_found": len(person_counts),

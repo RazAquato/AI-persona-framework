@@ -38,7 +38,7 @@ ENGINE_PATCHES = [
     patch("core.engine.store_emotion_vector"),
     patch("core.engine.get_last_session_for_persona", return_value=None),
     patch("core.engine.start_chat_session", return_value=1),
-    patch("core.engine.bump_salience"),
+    patch("core.engine.ingest_facts", return_value={"facts_stored": 0, "facts_skipped": 0, "topics_found": 0, "topic_names": []}),
     patch("core.engine.boost_group_salience"),
 ]
 
@@ -136,8 +136,7 @@ class TestIncognitoMode(unittest.TestCase):
 
     @patch("core.engine.get_persona", return_value=FAKE_PERSONA)
     @patch("core.engine.load_persona_emotion", return_value=FAKE_EMOTION_STATE)
-    @patch("core.engine.ingest_extracted_knowledge")
-    @patch("core.engine.store_fact_blobs")
+    @patch("core.engine.ingest_facts")
     @patch("core.engine.save_persona_emotion")
     @patch("core.engine.store_embedding")
     @patch("core.engine.store_emotion_vector")
@@ -146,8 +145,8 @@ class TestIncognitoMode(unittest.TestCase):
     @patch("core.engine.get_last_session_for_persona", return_value=None)
     def test_incognito_skips_all_persistence(self, mock_last_persona, mock_start,
                                               mock_log, mock_emo, mock_embed,
-                                              mock_save_persona, mock_fact_blobs,
-                                              mock_ingest,
+                                              mock_save_persona,
+                                              mock_ingest_facts,
                                               mock_load_emo, mock_persona):
         result = run_conversation_turn(
             user_id=9999, user_input="Secret message", incognito=True, persona_id=1
@@ -158,8 +157,7 @@ class TestIncognitoMode(unittest.TestCase):
         mock_emo.assert_not_called()
         mock_embed.assert_not_called()
         mock_save_persona.assert_not_called()
-        mock_fact_blobs.assert_not_called()
-        mock_ingest.assert_not_called()
+        mock_ingest_facts.assert_not_called()
 
     @apply_engine_patches
     def test_nsfw_mode_in_result(self, *mocks):

@@ -25,8 +25,7 @@ for p in [MEMORY_PATH, SHARED_PATH]:
         sys.path.append(p)
 
 from analysis.knowledge_extractor import KnowledgeExtractor
-from memory.fact_store import store_fact_blobs
-from memory.topic_graph import ingest_extracted_knowledge
+from memory.ingest_pipeline import ingest as ingest_facts
 
 _extractor = KnowledgeExtractor()
 
@@ -90,22 +89,16 @@ def ingest_document(file_path: str, user_id: int, **kwargs) -> dict:
             else:
                 total_extracted["topics"].append(topic)
 
-    # Store facts and entities in bulk
-    all_blobs = total_extracted["facts"] + total_extracted["entities"]
-    stored_ids = store_fact_blobs(user_id, all_blobs,
-                                  source_type="document", source_ref=source_ref)
-    facts_stored = sum(1 for i in stored_ids if i is not None)
-
-    # Store in Neo4j
-    ingest_extracted_knowledge(user_id, total_extracted)
-    topics_found = len(total_extracted["topics"])
+    # Unified ingestion: store facts, populate Neo4j, link topics
+    result = ingest_facts(user_id, total_extracted,
+                          source_type="document", source_ref=source_ref)
 
     return {
         "success": True,
         "file": source_ref,
-        "facts_stored": facts_stored,
-        "topics_found": topics_found,
-        "total_extracted": len(all_blobs),
+        "facts_stored": result["facts_stored"],
+        "topics_found": result["topics_found"],
+        "total_extracted": len(total_extracted["facts"]) + len(total_extracted["entities"]),
     }
 
 

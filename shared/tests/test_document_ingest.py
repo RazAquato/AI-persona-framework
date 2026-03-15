@@ -35,9 +35,8 @@ class TestDocumentIngest(unittest.TestCase):
         self.assertFalse(result["success"])
         self.assertIn("empty", result["error"])
 
-    @patch("tools.document_ingest.ingest_extracted_knowledge")
-    @patch("tools.document_ingest.store_fact_blobs", return_value=[1, 2])
-    def test_ingest_txt_file(self, mock_store, mock_ingest):
+    @patch("tools.document_ingest.ingest_facts", return_value={"facts_stored": 2, "facts_skipped": 0, "topics_found": 1, "topic_names": ["hiking"]})
+    def test_ingest_txt_file(self, mock_ingest):
         with tempfile.NamedTemporaryFile(suffix=".txt", mode="w", delete=False) as f:
             f.write("My name is Kenneth and I live in Norway.\n\nI love hiking in the mountains.")
             f.flush()
@@ -45,12 +44,10 @@ class TestDocumentIngest(unittest.TestCase):
         os.unlink(f.name)
         self.assertTrue(result["success"])
         self.assertGreater(result["total_extracted"], 0)
-        mock_store.assert_called_once()
         mock_ingest.assert_called_once()
 
-    @patch("tools.document_ingest.ingest_extracted_knowledge")
-    @patch("tools.document_ingest.store_fact_blobs", return_value=[])
-    def test_ingest_md_file(self, mock_store, mock_ingest):
+    @patch("tools.document_ingest.ingest_facts", return_value={"facts_stored": 0, "facts_skipped": 0, "topics_found": 0, "topic_names": []})
+    def test_ingest_md_file(self, mock_ingest):
         with tempfile.NamedTemporaryFile(suffix=".md", mode="w", delete=False) as f:
             f.write("# Notes\n\nJust some random text about nothing in particular.")
             f.flush()
@@ -58,9 +55,8 @@ class TestDocumentIngest(unittest.TestCase):
         os.unlink(f.name)
         self.assertTrue(result["success"])
 
-    @patch("tools.document_ingest.ingest_extracted_knowledge")
-    @patch("tools.document_ingest.store_fact_blobs", return_value=[1])
-    def test_ingest_json_file(self, mock_store, mock_ingest):
+    @patch("tools.document_ingest.ingest_facts", return_value={"facts_stored": 1, "facts_skipped": 0, "topics_found": 0, "topic_names": []})
+    def test_ingest_json_file(self, mock_ingest):
         import json
         with tempfile.NamedTemporaryFile(suffix=".json", mode="w", delete=False) as f:
             json.dump({"note": "I work as a software engineer"}, f)

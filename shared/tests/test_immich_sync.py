@@ -133,11 +133,10 @@ class TestSyncImmich(unittest.TestCase):
         result = sync_immich(user_id=9999, base_url=None, api_key=None)
         self.assertIn("error", result)
 
-    @patch("tools.immich_sync.delete_facts_by_source", return_value=0)
-    @patch("tools.immich_sync.store_fact_blobs")
+    @patch("tools.immich_sync.ingest_facts", return_value={"facts_stored": 0, "facts_skipped": 0, "topics_found": 0, "topic_names": []})
     @patch.object(ImmichClient, '_post', side_effect=_mock_post)
     @patch.object(ImmichClient, '_get', side_effect=_mock_get)
-    def test_sync_produces_people_facts(self, mock_get, mock_post, mock_store, mock_delete):
+    def test_sync_produces_people_facts(self, mock_get, mock_post, mock_ingest):
         result = sync_immich(user_id=9999, base_url="http://fake", api_key="key")
         self.assertEqual(result["people_found"], 4)
 
@@ -148,11 +147,10 @@ class TestSyncImmich(unittest.TestCase):
         self.assertIn("many photos", ylva_fact["text"])
         self.assertIn("707", ylva_fact["text"])
 
-    @patch("tools.immich_sync.delete_facts_by_source", return_value=0)
-    @patch("tools.immich_sync.store_fact_blobs")
+    @patch("tools.immich_sync.ingest_facts", return_value={"facts_stored": 0, "facts_skipped": 0, "topics_found": 0, "topic_names": []})
     @patch.object(ImmichClient, '_post', side_effect=_mock_post)
     @patch.object(ImmichClient, '_get', side_effect=_mock_get)
-    def test_confidence_scales_with_photo_count(self, mock_get, mock_post, mock_store, mock_delete):
+    def test_confidence_scales_with_photo_count(self, mock_get, mock_post, mock_ingest):
         result = sync_immich(user_id=9999, base_url="http://fake", api_key="key")
         people_facts = [f for f in result["facts"] if "person" in f["tags"]]
 
@@ -160,101 +158,92 @@ class TestSyncImmich(unittest.TestCase):
         birgitte = next(f for f in people_facts if "Birgitte" in f["text"])
         self.assertGreater(ylva["confidence"], birgitte["confidence"])
 
-    @patch("tools.immich_sync.delete_facts_by_source", return_value=0)
-    @patch("tools.immich_sync.store_fact_blobs")
+    @patch("tools.immich_sync.ingest_facts", return_value={"facts_stored": 0, "facts_skipped": 0, "topics_found": 0, "topic_names": []})
     @patch.object(ImmichClient, '_post', side_effect=_mock_post)
     @patch.object(ImmichClient, '_get', side_effect=_mock_get)
-    def test_sync_produces_location_facts(self, mock_get, mock_post, mock_store, mock_delete):
+    def test_sync_produces_location_facts(self, mock_get, mock_post, mock_ingest):
         result = sync_immich(user_id=9999, base_url="http://fake", api_key="key")
         location_facts = [f["text"] for f in result["facts"] if "location" in f["tags"]]
         self.assertTrue(any("Lysaker" in f for f in location_facts))
 
-    @patch("tools.immich_sync.delete_facts_by_source", return_value=0)
-    @patch("tools.immich_sync.store_fact_blobs")
+    @patch("tools.immich_sync.ingest_facts", return_value={"facts_stored": 0, "facts_skipped": 0, "topics_found": 0, "topic_names": []})
     @patch.object(ImmichClient, '_post', side_effect=_mock_post)
     @patch.object(ImmichClient, '_get', side_effect=_mock_get)
-    def test_sync_produces_country_facts(self, mock_get, mock_post, mock_store, mock_delete):
+    def test_sync_produces_country_facts(self, mock_get, mock_post, mock_ingest):
         result = sync_immich(user_id=9999, base_url="http://fake", api_key="key")
         country_facts = [f["text"] for f in result["facts"] if "country" in f["tags"]]
         self.assertTrue(any("Norway" in f for f in country_facts))
         self.assertTrue(any("France" in f for f in country_facts))
 
-    @patch("tools.immich_sync.delete_facts_by_source", return_value=0)
-    @patch("tools.immich_sync.store_fact_blobs")
+    @patch("tools.immich_sync.ingest_facts", return_value={"facts_stored": 0, "facts_skipped": 0, "topics_found": 0, "topic_names": []})
     @patch.object(ImmichClient, '_post', side_effect=_mock_post)
     @patch.object(ImmichClient, '_get', side_effect=_mock_get)
-    def test_sync_produces_device_facts(self, mock_get, mock_post, mock_store, mock_delete):
+    def test_sync_produces_device_facts(self, mock_get, mock_post, mock_ingest):
         result = sync_immich(user_id=9999, base_url="http://fake", api_key="key")
         device_facts = [f["text"] for f in result["facts"] if "device" in f["tags"]]
         self.assertTrue(any("iPhone 13 mini" in f for f in device_facts))
 
-    @patch("tools.immich_sync.delete_facts_by_source", return_value=0)
-    @patch("tools.immich_sync.store_fact_blobs")
+    @patch("tools.immich_sync.ingest_facts", return_value={"facts_stored": 0, "facts_skipped": 0, "topics_found": 0, "topic_names": []})
     @patch.object(ImmichClient, '_post', side_effect=_mock_post)
     @patch.object(ImmichClient, '_get', side_effect=_mock_get)
-    def test_all_facts_are_identity_tier(self, mock_get, mock_post, mock_store, mock_delete):
+    def test_all_facts_are_identity_tier(self, mock_get, mock_post, mock_ingest):
         result = sync_immich(user_id=9999, base_url="http://fake", api_key="key")
         for fact in result["facts"]:
             self.assertEqual(fact["tier"], "identity")
 
-    @patch("tools.immich_sync.delete_facts_by_source", return_value=0)
-    @patch("tools.immich_sync.store_fact_blobs")
+    @patch("tools.immich_sync.ingest_facts", return_value={"facts_stored": 0, "facts_skipped": 0, "topics_found": 0, "topic_names": []})
     @patch.object(ImmichClient, '_post', side_effect=_mock_post)
     @patch.object(ImmichClient, '_get', side_effect=_mock_get)
-    def test_person_facts_have_family_domain(self, mock_get, mock_post, mock_store, mock_delete):
+    def test_person_facts_have_family_domain(self, mock_get, mock_post, mock_ingest):
         result = sync_immich(user_id=9999, base_url="http://fake", api_key="key")
         person_facts = [f for f in result["facts"] if "person" in f.get("tags", [])]
         for fact in person_facts:
             self.assertEqual(fact["domain"], "family")
 
-    @patch("tools.immich_sync.delete_facts_by_source", return_value=0)
-    @patch("tools.immich_sync.store_fact_blobs")
+    @patch("tools.immich_sync.ingest_facts", return_value={"facts_stored": 0, "facts_skipped": 0, "topics_found": 0, "topic_names": []})
     @patch.object(ImmichClient, '_post', side_effect=_mock_post)
     @patch.object(ImmichClient, '_get', side_effect=_mock_get)
-    def test_location_facts_have_memories_domain(self, mock_get, mock_post, mock_store, mock_delete):
+    def test_location_facts_have_memories_domain(self, mock_get, mock_post, mock_ingest):
         result = sync_immich(user_id=9999, base_url="http://fake", api_key="key")
         loc_facts = [f for f in result["facts"] if "location" in f.get("tags", [])]
         for fact in loc_facts:
             self.assertEqual(fact["domain"], "memories")
 
-    @patch("tools.immich_sync.delete_facts_by_source", return_value=0)
-    @patch("tools.immich_sync.store_fact_blobs")
+    @patch("tools.immich_sync.ingest_facts", return_value={"facts_stored": 0, "facts_skipped": 0, "topics_found": 0, "topic_names": []})
     @patch.object(ImmichClient, '_post', side_effect=_mock_post)
     @patch.object(ImmichClient, '_get', side_effect=_mock_get)
-    def test_device_facts_have_other_domain(self, mock_get, mock_post, mock_store, mock_delete):
+    def test_device_facts_have_other_domain(self, mock_get, mock_post, mock_ingest):
         result = sync_immich(user_id=9999, base_url="http://fake", api_key="key")
         dev_facts = [f for f in result["facts"] if "device" in f.get("tags", [])]
         for fact in dev_facts:
             self.assertEqual(fact["domain"], "other")
 
-    @patch("tools.immich_sync.delete_facts_by_source", return_value=0)
-    @patch("tools.immich_sync.store_fact_blobs")
+    @patch("tools.immich_sync.ingest_facts", return_value={"facts_stored": 0, "facts_skipped": 0, "topics_found": 0, "topic_names": []})
     @patch.object(ImmichClient, '_post', side_effect=_mock_post)
     @patch.object(ImmichClient, '_get', side_effect=_mock_get)
-    def test_all_facts_have_immich_source_type(self, mock_get, mock_post, mock_store, mock_delete):
+    def test_all_facts_have_immich_source_type(self, mock_get, mock_post, mock_ingest):
         result = sync_immich(user_id=9999, base_url="http://fake", api_key="key")
         for fact in result["facts"]:
             self.assertEqual(fact["source_type"], "immich")
 
-    @patch("tools.immich_sync.delete_facts_by_source", return_value=5)
-    @patch("tools.immich_sync.store_fact_blobs")
+    @patch("tools.immich_sync.ingest_facts", return_value={"facts_stored": 5, "facts_skipped": 0, "topics_found": 0, "topic_names": []})
     @patch.object(ImmichClient, '_post', side_effect=_mock_post)
     @patch.object(ImmichClient, '_get', side_effect=_mock_get)
-    def test_sync_deletes_old_facts_before_insert(self, mock_get, mock_post, mock_store, mock_delete):
+    def test_sync_calls_ingest_pipeline(self, mock_get, mock_post, mock_ingest):
         result = sync_immich(user_id=9999, base_url="http://fake", api_key="key")
-        mock_delete.assert_called_once_with(9999, "immich")
-        mock_store.assert_called_once()
-        self.assertEqual(result["deleted_old"], 5)
+        mock_ingest.assert_called_once()
+        call_kwargs = mock_ingest.call_args
+        self.assertEqual(call_kwargs[0][0], 9999)  # user_id
+        self.assertEqual(call_kwargs[1]["source_type"], "immich")
+        self.assertTrue(call_kwargs[1]["snapshot"])
 
     @patch.object(ImmichClient, '_post', side_effect=_mock_post)
     @patch.object(ImmichClient, '_get', side_effect=_mock_get)
     def test_dry_run_does_not_store(self, mock_get, mock_post):
-        with patch("tools.immich_sync.store_fact_blobs") as mock_store, \
-             patch("tools.immich_sync.delete_facts_by_source") as mock_delete:
+        with patch("tools.immich_sync.ingest_facts") as mock_ingest:
             result = sync_immich(user_id=9999, base_url="http://fake",
                                  api_key="key", dry_run=True)
-            mock_store.assert_not_called()
-            mock_delete.assert_not_called()
+            mock_ingest.assert_not_called()
             self.assertGreater(result["facts_generated"], 0)
 
     @patch.object(ImmichClient, '_post', return_value={"assets": {"count": 0, "items": [], "nextPage": None}})
@@ -265,11 +254,10 @@ class TestSyncImmich(unittest.TestCase):
         self.assertEqual(result["people_found"], 0)
         self.assertEqual(result["facts_generated"], 0)
 
-    @patch("tools.immich_sync.delete_facts_by_source", return_value=0)
-    @patch("tools.immich_sync.store_fact_blobs")
+    @patch("tools.immich_sync.ingest_facts", return_value={"facts_stored": 0, "facts_skipped": 0, "topics_found": 0, "topic_names": []})
     @patch.object(ImmichClient, '_post', side_effect=_mock_post)
     @patch.object(ImmichClient, '_get', side_effect=_mock_get)
-    def test_people_facts_have_entity_type_person(self, mock_get, mock_post, mock_store, mock_delete):
+    def test_people_facts_have_entity_type_person(self, mock_get, mock_post, mock_ingest):
         result = sync_immich(user_id=9999, base_url="http://fake", api_key="key")
         people_facts = [f for f in result["facts"] if "person" in f["tags"]]
         for fact in people_facts:

@@ -100,10 +100,9 @@ class TestSyncMealie(unittest.TestCase):
         result = sync_mealie(user_id=9999, base_url=None, token=None)
         self.assertIn("error", result)
 
-    @patch("tools.mealie_sync.delete_facts_by_source", return_value=0)
-    @patch("tools.mealie_sync.store_fact_blobs")
+    @patch("tools.mealie_sync.ingest_facts", return_value={"facts_stored": 0, "facts_skipped": 0, "topics_found": 0, "topic_names": []})
     @patch.object(MealieClient, '_get', side_effect=_mock_get)
-    def test_sync_produces_recipe_facts(self, mock_get, mock_store, mock_delete):
+    def test_sync_produces_recipe_facts(self, mock_get, mock_ingest):
         result = sync_mealie(user_id=9999, base_url="http://fake", token="token")
         self.assertEqual(result["mealplan_entries"], 5)
         self.assertEqual(result["recipes_synced"], 3)
@@ -118,19 +117,17 @@ class TestSyncMealie(unittest.TestCase):
         fish_fact = next(f for f in fact_texts if "Fish" in f)
         self.assertIn("has made", fish_fact)
 
-    @patch("tools.mealie_sync.delete_facts_by_source", return_value=0)
-    @patch("tools.mealie_sync.store_fact_blobs")
+    @patch("tools.mealie_sync.ingest_facts", return_value={"facts_stored": 0, "facts_skipped": 0, "topics_found": 0, "topic_names": []})
     @patch.object(MealieClient, '_get', side_effect=_mock_get)
-    def test_sync_extracts_categories(self, mock_get, mock_store, mock_delete):
+    def test_sync_extracts_categories(self, mock_get, mock_ingest):
         result = sync_mealie(user_id=9999, base_url="http://fake", token="token")
         cat_facts = [f["text"] for f in result["facts"] if "food_category" in f["tags"]]
         self.assertTrue(any("Mexican" in f for f in cat_facts))
         self.assertTrue(any("Italian" in f for f in cat_facts))
 
-    @patch("tools.mealie_sync.delete_facts_by_source", return_value=0)
-    @patch("tools.mealie_sync.store_fact_blobs")
+    @patch("tools.mealie_sync.ingest_facts", return_value={"facts_stored": 0, "facts_skipped": 0, "topics_found": 0, "topic_names": []})
     @patch.object(MealieClient, '_get', side_effect=_mock_get)
-    def test_sync_extracts_frequent_ingredients(self, mock_get, mock_store, mock_delete):
+    def test_sync_extracts_frequent_ingredients(self, mock_get, mock_ingest):
         result = sync_mealie(user_id=9999, base_url="http://fake", token="token")
         ingredient_facts = [f["text"] for f in result["facts"] if "ingredient" in f["tags"]]
         # "ost" appears in both taco and pizza
@@ -138,56 +135,51 @@ class TestSyncMealie(unittest.TestCase):
         # "torsk" only in fish (1 recipe) — should NOT appear
         self.assertFalse(any("torsk" in f for f in ingredient_facts))
 
-    @patch("tools.mealie_sync.delete_facts_by_source", return_value=0)
-    @patch("tools.mealie_sync.store_fact_blobs")
+    @patch("tools.mealie_sync.ingest_facts", return_value={"facts_stored": 0, "facts_skipped": 0, "topics_found": 0, "topic_names": []})
     @patch.object(MealieClient, '_get', side_effect=_mock_get)
-    def test_confidence_scales_with_frequency(self, mock_get, mock_store, mock_delete):
+    def test_confidence_scales_with_frequency(self, mock_get, mock_ingest):
         result = sync_mealie(user_id=9999, base_url="http://fake", token="token")
         taco = next(f for f in result["facts"] if "Taco" in f["text"])
         fish = next(f for f in result["facts"] if "Fish" in f["text"])
         self.assertGreater(taco["confidence"], fish["confidence"])
 
-    @patch("tools.mealie_sync.delete_facts_by_source", return_value=0)
-    @patch("tools.mealie_sync.store_fact_blobs")
+    @patch("tools.mealie_sync.ingest_facts", return_value={"facts_stored": 0, "facts_skipped": 0, "topics_found": 0, "topic_names": []})
     @patch.object(MealieClient, '_get', side_effect=_mock_get)
-    def test_all_facts_are_identity_tier(self, mock_get, mock_store, mock_delete):
+    def test_all_facts_are_identity_tier(self, mock_get, mock_ingest):
         result = sync_mealie(user_id=9999, base_url="http://fake", token="token")
         for fact in result["facts"]:
             self.assertEqual(fact["tier"], "identity")
 
-    @patch("tools.mealie_sync.delete_facts_by_source", return_value=0)
-    @patch("tools.mealie_sync.store_fact_blobs")
+    @patch("tools.mealie_sync.ingest_facts", return_value={"facts_stored": 0, "facts_skipped": 0, "topics_found": 0, "topic_names": []})
     @patch.object(MealieClient, '_get', side_effect=_mock_get)
-    def test_all_facts_have_hobbies_domain(self, mock_get, mock_store, mock_delete):
+    def test_all_facts_have_hobbies_domain(self, mock_get, mock_ingest):
         result = sync_mealie(user_id=9999, base_url="http://fake", token="token")
         for fact in result["facts"]:
             self.assertEqual(fact["domain"], "hobbies")
 
-    @patch("tools.mealie_sync.delete_facts_by_source", return_value=0)
-    @patch("tools.mealie_sync.store_fact_blobs")
+    @patch("tools.mealie_sync.ingest_facts", return_value={"facts_stored": 0, "facts_skipped": 0, "topics_found": 0, "topic_names": []})
     @patch.object(MealieClient, '_get', side_effect=_mock_get)
-    def test_all_facts_have_mealie_source_type(self, mock_get, mock_store, mock_delete):
+    def test_all_facts_have_mealie_source_type(self, mock_get, mock_ingest):
         result = sync_mealie(user_id=9999, base_url="http://fake", token="token")
         for fact in result["facts"]:
             self.assertEqual(fact["source_type"], "mealie")
 
-    @patch("tools.mealie_sync.delete_facts_by_source", return_value=3)
-    @patch("tools.mealie_sync.store_fact_blobs")
+    @patch("tools.mealie_sync.ingest_facts", return_value={"facts_stored": 5, "facts_skipped": 0, "topics_found": 0, "topic_names": []})
     @patch.object(MealieClient, '_get', side_effect=_mock_get)
-    def test_sync_deletes_old_facts_before_insert(self, mock_get, mock_store, mock_delete):
+    def test_sync_calls_ingest_pipeline(self, mock_get, mock_ingest):
         result = sync_mealie(user_id=9999, base_url="http://fake", token="token")
-        mock_delete.assert_called_once_with(9999, "mealie")
-        mock_store.assert_called_once()
-        self.assertEqual(result["deleted_old"], 3)
+        mock_ingest.assert_called_once()
+        call_kwargs = mock_ingest.call_args
+        self.assertEqual(call_kwargs[0][0], 9999)  # user_id
+        self.assertEqual(call_kwargs[1]["source_type"], "mealie")
+        self.assertTrue(call_kwargs[1]["snapshot"])
 
     @patch.object(MealieClient, '_get', side_effect=_mock_get)
     def test_dry_run_does_not_store(self, mock_get):
-        with patch("tools.mealie_sync.store_fact_blobs") as mock_store, \
-             patch("tools.mealie_sync.delete_facts_by_source") as mock_delete:
+        with patch("tools.mealie_sync.ingest_facts") as mock_ingest:
             result = sync_mealie(user_id=9999, base_url="http://fake",
                                  token="token", dry_run=True)
-            mock_store.assert_not_called()
-            mock_delete.assert_not_called()
+            mock_ingest.assert_not_called()
             self.assertGreater(result["facts_generated"], 0)
 
     @patch.object(MealieClient, '_get', return_value={
