@@ -338,7 +338,7 @@ class CreatePersonaRequest(BaseModel):
     description: str = ""
     system_prompt: str = ""
     nsfw_capable: bool = False
-    nsfw_prompt_addon: str = None
+    nsfw_prompt_addon: Optional[str] = None
     memory_scope: Optional[dict] = None
 
 
@@ -1270,9 +1270,12 @@ async function renamePersona() {
     method: 'PUT',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({
-      slug: p.slug, name: newName.trim(), description: p.description,
-      system_prompt: p.system_prompt, nsfw_capable: p.nsfw_capable,
-      nsfw_prompt_addon: p.nsfw_prompt_addon, memory_scope: p.memory_scope,
+      slug: p.slug, name: newName.trim(),
+      description: p.description || '',
+      system_prompt: p.system_prompt || '',
+      nsfw_capable: p.nsfw_capable || false,
+      nsfw_prompt_addon: p.nsfw_prompt_addon || '',
+      memory_scope: p.memory_scope || null,
     }),
   });
   await loadPersonas();
