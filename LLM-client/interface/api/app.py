@@ -687,8 +687,11 @@ CHAT_HTML = """<!DOCTYPE html>
   #user-bar .username { font-size: 13px; color: #aab; }
   #user-bar .logout-btn { font-size: 12px; color: #667; cursor: pointer; background: none; border: 1px solid #444; border-radius: 4px; padding: 4px 8px; }
   #user-bar .logout-btn:hover { color: #aab; border-color: #666; }
-  #persona-select { width: 100%; padding: 8px 12px; background: #1a1a2e; color: #eee; border: 1px solid #444; border-radius: 6px; font-size: 14px; cursor: pointer; }
+  .persona-row { display: flex; gap: 6px; align-items: center; }
+  #persona-select { flex: 1; padding: 8px 12px; background: #1a1a2e; color: #eee; border: 1px solid #444; border-radius: 6px; font-size: 14px; cursor: pointer; }
   #persona-select:focus { outline: none; border-color: #6a6aaa; }
+  #rename-persona-btn { background: none; border: 1px solid #444; border-radius: 6px; padding: 7px 9px; color: #888; cursor: pointer; font-size: 14px; line-height: 1; }
+  #rename-persona-btn:hover { color: #ccc; border-color: #666; }
   #new-chat-btn { width: 100%; margin-top: 10px; padding: 10px; background: #4a4a8a; border: none; border-radius: 6px; color: #eee; font-size: 14px; cursor: pointer; }
   #new-chat-btn:hover { background: #5a5a9a; }
   .toggle-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 13px; color: #aab; }
@@ -789,7 +792,10 @@ CHAT_HTML = """<!DOCTYPE html>
       <button class="logout-btn" onclick="logout()">Logout</button>
     </div>
     <h2>Personas</h2>
-    <select id="persona-select" onchange="onPersonaChange()"></select>
+    <div class="persona-row">
+      <select id="persona-select" onchange="onPersonaChange()"></select>
+      <button id="rename-persona-btn" onclick="renamePersona()" title="Rename persona">&#9998;</button>
+    </div>
     <div class="toggle-row" id="nsfw-toggle-row">
       <input type="checkbox" id="nsfw-toggle">
       <label for="nsfw-toggle">NSFW mode</label>
@@ -1254,6 +1260,26 @@ async function deleteFolder(gid) {
 
 const ALL_DOMAINS = ['family', 'physical', 'hobbies', 'work', 'emotional', 'memories', 'other'];
 const DOMAIN_LABELS = {family:'Family', physical:'Physical', hobbies:'Hobbies', work:'Work', emotional:'Emotional', memories:'Memories', other:'Other'};
+
+async function renamePersona() {
+  const p = currentPersona();
+  if (!p) return;
+  const newName = prompt('Rename persona:', p.name);
+  if (!newName || !newName.trim() || newName.trim() === p.name) return;
+  await authFetch('/personas/' + p.id, {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      slug: p.slug, name: newName.trim(), description: p.description,
+      system_prompt: p.system_prompt, nsfw_capable: p.nsfw_capable,
+      nsfw_prompt_addon: p.nsfw_prompt_addon, memory_scope: p.memory_scope,
+    }),
+  });
+  await loadPersonas();
+  personaSelect.value = p.id;
+  currentPersonaId = p.id;
+  headerPersona.textContent = buildHeader(getPersonaById(p.id));
+}
 
 function onPersonaChange() {
   currentPersonaId = parseInt(personaSelect.value) || null;
