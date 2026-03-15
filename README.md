@@ -25,12 +25,13 @@ For those who hyperfocus on topics that go dormant, the system acts as a searcha
 
 ## What It Does Today
 
-- **4 default personas** with distinct personalities (Maya/girlfriend, Coach/trainer, Dr. Lumen/psychiatrist, DebugBot/debug)
+- **5 default personas** with distinct personalities (Maya/girlfriend, Alex/friend, Coach/trainer, Dr. Lumen/psychiatrist, DebugBot/debug)
 - **Per-user persona ownership** — create, edit, delete your own personas via API/UI
 - **Persistent memory** across sessions: chat history, semantic search, structured facts, topic graph
 - **Dynamic persona emotions** — each persona maintains emotional state toward you (joy, trust, sadness, etc.) with time-based decay and absence drift
 - **User emotion detection** — 18-dimensional emotion vector per message
 - **LLM-based knowledge extraction** — extracts facts, entities, and topics from conversations with two-tier classification (identity vs emotional)
+- **Unified ingestion pipeline** — single entry point for all fact sources (conversation, documents, external adapters) with dedup, topic linking, Neo4j, and salience bumping
 - **External data sync** — Mealie (recipes/cooking habits) and Immich (photo archive: people, locations, devices) as identity-tier facts
 - **NSFW mode** — per-session toggle on capable personas, with safety-filtered extraction
 - **Incognito mode** — chat without any DB persistence
@@ -88,7 +89,7 @@ User input
 | Mealie | Recipe/meal plan API | Cooking frequency, categories, ingredients |
 | Immich | Photo archive API | People (face frequency), locations (EXIF GPS), devices |
 
-Adapters use snapshot sync: delete old facts by source_type, insert fresh set. Designed for monthly cron runs.
+All sources flow through a unified ingestion pipeline (`memory-server/memory/ingest_pipeline.py`) that handles dedup, topic linking, Neo4j graph population, and per-persona salience bumping. External adapters use snapshot mode (delete-and-replace) via monthly cron runs.
 
 ---
 
@@ -132,7 +133,7 @@ python3 LLM-client/interface/cli_chat.py --persona girlfriend --show-emotions
 ### Tests
 
 ```bash
-python3 test_all_python_code.py    # 527 tests across all modules
+python3 test_all_python_code.py    # 541 tests across all modules
 ```
 
 ---
@@ -169,6 +170,7 @@ AI-persona-framework/
 │   │   ├── persona_store.py       # Persona CRUD (DB-backed)
 │   │   ├── topic_store.py         # Topic registry, salience tracking, decay
 │   │   ├── topic_emotion_store.py # User emotion classification per topic
+│   │   ├── ingest_pipeline.py    # Unified fact ingestion (all sources converge here)
 │   │   ├── context_builder.py     # Aggregates all memory layers for prompt
 │   │   ├── buffer.py              # In-memory conversation buffer
 │   │   └── user_store.py          # User accounts
@@ -182,7 +184,7 @@ AI-persona-framework/
 │   │   ├── nightly_salience_decay.py # Cron: time-based salience decay
 │   │   ├── sync_mealie.py         # CLI: monthly Mealie recipe sync
 │   │   └── sync_immich.py         # CLI: monthly Immich photo sync
-│   └── tests/                     # 231 tests
+│   └── tests/                     # 245 tests
 │
 ├── shared/                        # Cross-package utilities
 │   ├── analysis/
@@ -193,6 +195,8 @@ AI-persona-framework/
 │   │   ├── tool_registry.py       # Tool dispatch registry
 │   │   ├── image_gen.py           # Image generation entry point
 │   │   ├── image_orchestrator.py  # ComfyUI bridge
+│   │   ├── document_ingest.py     # Text/JSON/CSV document ingestion
+│   │   ├── compress_tool.py      # Session compression to fact summaries
 │   │   ├── mealie_sync.py         # Mealie recipe/meal plan adapter
 │   │   └── immich_sync.py         # Immich photo archive adapter
 │   └── tests/                     # 208 tests
@@ -208,14 +212,16 @@ AI-persona-framework/
 
 ## Status
 
-**Beta** — core conversation pipeline, memory system, web UI, auth, emotions, knowledge extraction, external adapters, model switching, session folders, topic salience tracking, and topic emotion classification are all functional with 527 passing tests.
+**Beta** — core conversation pipeline, memory system, web UI, auth, emotions, knowledge extraction, external adapters, model switching, session folders, topic salience tracking, topic emotion classification, and unified ingestion pipeline are all functional with 541 passing tests.
 
-**Completed:** Session groups/folders, session archiving, topic registry with per-persona salience tracking, user emotion classification per topic with nightly reflection job and emotion-aware prompt framing.
+**Recently completed:** Unified ingestion pipeline (single entry point for all fact sources), 5th persona (Alex/friend), persona isolation test hardening, exception logging across all modules.
 
 **Roadmap:**
-- Nightly reflection agent (pattern detection in temporal data)
-- Persona topic emotions (autonomous, non-compliant personality development)
-- Additional data adapters (Fitbit, ChatGPT history import, document ingestion)
+- Daily usage and prompt tuning (gathering real conversation data)
+- Temporal pattern detection (Phase 4 — after usage data informs priorities)
+- Persona autonomy and personality tendencies (Phase 5)
+- Echo integration with real corpus (Phase 6)
+- Additional data adapters (Obsidian, private notes, Fitbit)
 - Home automation integration (AI-driven Home Assistant via Neo4j house graph)
 
 ---
